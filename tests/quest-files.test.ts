@@ -1,0 +1,46 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm, mkdir, writeFile, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import { EventEmitter } from 'node:events';
+import { createApp } from '../src/service/server.ts';
+
+test('quest file links serve existing workspace reports with authentication, containment and sandboxing',async t=>{
+ const dataDir=await mkdtemp(join(tmpdir(),'guildmaster-files-'));
+ const app=createApp({dataDir,port:4173,models:[],defaultWorkspace:dataDir});app.service.schedule=()=>{};
+ t.after(async()=>{await app.close();await rm(dataDir,{recursive:true,force:true});});
+ const request=(url:string,headers:Record<string,string>={},method='GET')=>new Promise<{status:number;text:string;headers:Record<string,string>}>(resolve=>{
+  const req=Readable.from([]) as any;req.url=url;req.method=method;req.headers={host:'127.0.0.1:4173',...headers};
+  const res=new EventEmitter() as any,values:Record<string,string>={};res.headersSent=false;
+  res.setHeader=(key:string,value:string)=>{values[key.toLowerCase()]=value;};
+  res.writeHead=(status:number,headers:Record<string,string>={})=>{res.statusCode=status;res.headersSent=true;for(const [key,value] of Object.entries(headers))res.setHeader(key,value);};
+  res.end=(body?:string|Buffer)=>resolve({status:res.statusCode,text:body?.toString()??'',headers:values});app.server.emit('request',req,res);
+ });
+ const cookie=(await request('/api/bootstrap')).headers['set-cookie'].split(';')[0],human={cookie};
+ const q=(await app.service.create({objective:'Brief',workspaceMode:'none',tools:['read'],commandId:'brief'})).quest;
+ const report='<h1>Morning brief</h1><script>fetch("/api/bootstrap")</script>';
+ await mkdir(join(q.workspacePath,'reports'));await writeFile(join(q.workspacePath,'reports','full brief.html'),report);
+ const url=`/api/quests/${q.id}/files/reports/full%20brief.html`;
+ assert.equal((await request(url)).status,401);
+ app.service.gmTokens.set('gm-token',q.id);assert.equal((await request(url,{authorization:'Bearer gm-token'})).status,403);
+ const response=await request(url,human);assert.equal(response.status,200);assert.equal(response.text,report);
+ assert.match(response.headers['content-type'],/^text\/html/);assert.match(response.headers['content-security-policy'],/^sandbox;/);
+ assert.doesNotMatch(response.headers['content-security-policy'],/allow-scripts|allow-same-origin|script-src/);
+ assert.equal(response.headers['x-content-type-options'],'nosniff');assert.equal(response.headers['referrer-policy'],'no-referrer');
+ assert.equal((await request(url,human,'HEAD')).text,'');assert.equal((await request(url,human,'POST')).status,405);
+ assert.equal((await request(`/api/quests/${q.id}/files/${encodeURIComponent(join(q.workspacePath,'reports','full brief.html'))}`,human)).status,200);
+ assert.equal((await request(`/api/quests/${q.id}/files/missing.html`,human)).status,404);
+ assert.equal((await request('/api/quests/missing/files/report.html',human)).status,404);
+ await writeFile(join(dataDir,'outside.txt'),'private');await symlink(join(dataDir,'outside.txt'),join(q.workspacePath,'escape.txt'));
+ assert.equal((await request(`/api/quests/${q.id}/files/escape.txt`,human)).status,403);
+ assert.equal((await request(`/api/quests/${q.id}/files/%2E%2E%2Foutside.txt`,human)).status,404);
+ const other=(await app.service.create({objective:'Other',workspaceMode:'none',tools:['read'],commandId:'other'})).quest;
+ await writeFile(join(other.workspacePath,'other.txt'),'other quest');
+ assert.equal((await request(`/api/quests/${q.id}/files/${encodeURIComponent(join(other.workspacePath,'other.txt'))}`,human)).status,404);
+ q.outputPath=join(dataDir,'output');await mkdir(q.outputPath);await writeFile(join(q.outputPath,'report.md'),'# Report');app.store.save(q);
+ assert.equal((await request(`/api/quests/${q.id}/files/report.md`,human)).text,'# Report');
+ await writeFile(join(q.workspacePath,'data.bin'),Buffer.from([0,1,2]));
+ assert.match((await request(`/api/quests/${q.id}/files/data.bin`,human)).headers['content-disposition'],/^attachment;/);
+});

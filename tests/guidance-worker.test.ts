@@ -1,0 +1,78 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { createApp } from '../src/service/server.ts';
+import { ALLOWED_TOOLS } from '../src/domain/types.ts';
+import { SessionManager } from '@earendil-works/pi-coding-agent';
+
+test('Guildmaster routes a PR to a guided quest whose lead and delegate execute skill scripts and return a verdict', {timeout:30000}, async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'guildmaster-guided-review-')));
+  const repo = join(root, 'repo'); const dataDir = join(root, 'data'); const trace = join(root, 'model-requests.jsonl');
+  const put = async (path: string, content: string) => { await mkdir(join(path, '..'), {recursive:true}); await writeFile(path,content); };
+  await put(join(repo,'AGENTS.md'),'For PR reviews use /review. Return a verdict without publishing.');
+  const header = '---\nname: review\ndescription: Use for every PR review in this repository.\n---\n';
+  await put(join(repo,'.claude/skills/review/SKILL.md'),header+'Read `.cursor/skills/review/SKILL.md` and follow it exactly.');
+  await put(join(repo,'.cursor/skills/review/SKILL.md'),header+'RUN_THE_REVIEW_SCRIPT: Run node .cursor/skills/review/check.mjs. Ask a separate agent to verify the evidence. Return the verdict.');
+  await put(join(repo,'.cursor/skills/review/check.mjs'),`import {appendFileSync} from 'node:fs';\nappendFileSync(${JSON.stringify(join(root,'script-evidence.log'))}, process.cwd()+'\\n');\nconsole.log('SCRIPT_VERDICT: APPROVE');\n`);
+  await promisify(execFile)('git',['init'],{cwd:repo});
+  await promisify(execFile)('git',['config','user.email','fixture@example.invalid'],{cwd:repo});
+  await promisify(execFile)('git',['config','user.name','Fixture'],{cwd:repo});
+  await put(join(repo,'source.txt'),'Committed source');
+  await promisify(execFile)('git',['add','source.txt'],{cwd:repo});
+  await promisify(execFile)('git',['commit','-m','Initial source'],{cwd:repo});
+  await promisify(execFile)('git',['remote','add','origin','git@github.com:example/review-app.git'],{cwd:repo});
+  await put(join(dataDir,'engine/models.json'),JSON.stringify({providers:{'local-fixture':{baseUrl:'http://fixture.invalid/v1',api:'openai-completions',apiKey:'test-only',models:[{id:'fixture',name:'Fixture',reasoning:false,input:['text'],contextWindow:32000,maxTokens:2048}]}}}));
+  const workerPath = join(root,'worker.mjs');
+  await put(workerPath,`process.env.GUILDMASTER_TEST_REQUESTS=${JSON.stringify(trace)};\nprocess.env.GUILDMASTER_TEST_REPO=${JSON.stringify(repo)};\nawait import(${JSON.stringify(pathToFileURL(resolve('tests/fixtures/guidance-fetch.mjs')).href)});\nawait import(${JSON.stringify(pathToFileURL(resolve('src/worker.ts')).href)});\n`);
+  const app = createApp({dataDir,port:0,workerPath,defaultWorkspace:repo});
+  t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});
+  const {url,token}=await app.listen();
+  const project = (await app.service.saveProject({name:'Example',repositories:[{name:'Review app',path:repo}],commandId:'project'})).project;
+  const resolved = await fetch(`${url}/api/projects/resolve?repositoryUrl=${encodeURIComponent('https://github.com/example/review-app/pull/7')}`,{headers:{Authorization:`Bearer ${token}`}}).then(response=>response.json());
+  assert.equal(resolved.matches[0].projectId,project.id);
+  const gm = (await app.service.guildmaster({message:'Review https://github.com/example/review-app/pull/7 and give me a verdict.',tools:ALLOWED_TOOLS,workspaceMode:'none',model:'local-fixture/fixture',commandId:'gm-review'})).quest;
+  for (let attempt=0;attempt<500;attempt++) {
+    const quests = app.store.list();
+    const failed = quests.find(quest=>['failed','interrupted','awaiting_input'].includes(quest.status));
+    assert.ok(!failed,JSON.stringify(failed));
+    if (quests.some(quest=>quest.kind==='quest' && quest.status==='awaiting_review') && !app.service.live.size) break;
+    await new Promise(resolve=>setTimeout(resolve,30));
+  }
+  const quest=app.store.list().find(quest=>quest.kind==='quest');
+  assert.equal(quest?.status,'awaiting_review',JSON.stringify(app.store.list()));
+  assert.match(quest!.result!,/^APPROVE/);
+  assert.equal(quest!.project?.id,project.id);
+  assert.notEqual(quest!.sessionPath,gm.sessionPath);
+  const delegates=app.service.agents(quest!.id);
+  assert.equal(delegates.length,1);
+  assert.ok(delegates[0].tools.includes('bash'));
+  assert.notEqual(delegates[0].guidanceRevision,quest!.guidanceRevision);
+  assert.equal(quest!.workspacePolicy,'isolated');
+  assert.equal(delegates[0].workspacePolicy,'isolated');
+  assert.notEqual(quest!.workspacePath,repo);
+  assert.notEqual(delegates[0].workspacePath,quest!.workspacePath);
+  assert.equal(delegates[0].isolation?.[0].commit,quest!.isolation?.[0].commit);
+  assert.equal((await readFile(join(root,'script-evidence.log'),'utf8')).trim().split('\n').length,2,'Both lead and delegate must execute the real script');
+  for (const agent of [quest!,delegates[0]]) {
+    const detail=app.service.detail(agent.id);
+    assert.ok(detail.events.some(event=>event.type==='skill' && event.detail.includes('.cursor/skills/review/SKILL.md')));
+    assert.ok(detail.toolCalls.some(call=>call.tool==='bash' && call.status==='completed'));
+  }
+  const requests=(await readFile(trace,'utf8')).trim().split('\n').map(line=>JSON.parse(line));
+  assert.ok(requests.some(request=>JSON.stringify(request.messages).includes('RUN_THE_REVIEW_SCRIPT')));
+  const previousPath = delegates[0].sessionPath;
+  const previousSession = SessionManager.open(previousPath).getSessionId();
+  await app.service.continueDelegate(quest!.id, delegates[0].id, {message:'FRESH_VERIFIER_PACKET: Independently verify the script verdict with no earlier reasoning.',freshContext:true,commandId:'fresh-role'});
+  for (let attempt=0;attempt<300 && app.service.live.size;attempt++) await new Promise(resolve=>setTimeout(resolve,30));
+  const verifier = app.service.get(delegates[0].id);
+  assert.equal(verifier.status,'completed',JSON.stringify(verifier));
+  assert.notEqual(SessionManager.open(verifier.sessionPath).getSessionId(),previousSession);
+  assert.match(await readFile(verifier.sessionPath,'utf8'),/FRESH_VERIFIER_PACKET/);
+  assert.doesNotMatch(await readFile(verifier.sessionPath,'utf8'),/Independently run the repository review script and return its verdict/);
+  assert.equal((await readFile(join(root,'script-evidence.log'),'utf8')).trim().split('\n').length,3);
+});
