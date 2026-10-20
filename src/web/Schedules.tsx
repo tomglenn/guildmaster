@@ -7,11 +7,23 @@ import ConfirmDialog from './ConfirmDialog';
 import Breadcrumbs from './Breadcrumbs';
 import BoardControls from './BoardControls';
 import useStoredTab from './useStoredTab';
+import { getAppearance } from './appearance';
 
 type Occurrence = ScheduleOccurrence & {quest?: Quest; startedAt?: number};
 type ScheduleView = QuestSchedule & {blockedBy?: Quest;preparing?: boolean;latest?: Occurrence};
 type Request = <T>(path:string,body?:unknown)=>Promise<T>;
 const dates=(value:number,zone?:string)=>new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short',...(zone?{timeZone:zone}:{})});
+// Compare calendar dates in each schedule's timezone, not the browser's timezone.
+function plannerGroup(schedule: ScheduleView, now: number): 'overdue'|'today'|'tomorrow'|'upcoming'|'disabled' {
+  if (!schedule.enabled) return 'disabled';
+  const calendarDay = (value: number) => {
+    const parts = new Intl.DateTimeFormat('en-US', {timeZone:schedule.recurrence.timezone,year:'numeric',month:'numeric',day:'numeric'}).formatToParts(value);
+    const part = (name: string) => Number(parts.find(p=>p.type===name)?.value);
+    return Date.UTC(part('year'),part('month')-1,part('day'));
+  };
+  const day = calendarDay(schedule.nextAt), today = calendarDay(now);
+  return day < today ? 'overdue' : day === today ? 'today' : day === today + 86400000 ? 'tomorrow' : 'upcoming';
+}
 const labels:Record<string,string>={queued:'Queued',running:'In progress',waiting:'Working with agents',awaiting_input:'Needs your input',awaiting_review:'Ready for review',accepted:'Accepted',interrupted:'Needs attention',failed:'Failed',cancelled:'Cancelled',completed:'Completed'};
 const blank=():ScheduleConfig=>({name:'',objective:'',recurrence:{days:[1,2,3,4,5],time:'08:30',timezone:Intl.DateTimeFormat().resolvedOptions().timeZone},missed:'latest',projectId:null,workspacePolicy:'shared',tools:['read','grep','find','ls','bash'],model:''});
 const morning='Prepare my Morning Brief.\n\nSlack channels: [add channel links or names]\nGitHub scope: [add repositories or organization and my username]\nCoverage period: [for example, the last 24 hours; include older unresolved items that still need my attention]\n\nSummarize important developments and PRs or issues I own or am assigned that need attention. Prioritize a small number of concrete items and explain why each matters. Include source links and state the coverage dates. Clearly identify unavailable sources. If nothing needs attention, say so. Do not create further quests or take action on findings.';
@@ -19,6 +31,8 @@ const morning='Prepare my Morning Brief.\n\nSlack channels: [add channel links o
 export default function Schedules({selectedId,onSelect,onQuest,projects,models,request}: {
   selectedId?:string;onSelect:(id?:string)=>void;onQuest:(id:string)=>void;projects:Project[];models:{id:string;name:string}[];request:Request;
 }) {
+  const [guildhall,setGuildhall]=useState(()=>getAppearance().theme==='guildhall');
+  useEffect(()=>{const update=()=>setGuildhall(getAppearance().theme==='guildhall');window.addEventListener('guildmaster:appearance-changed',update);return()=>window.removeEventListener('guildmaster:appearance-changed',update);},[]);
   const [items,setItems]=useState<ScheduleView[]>([]),[loaded,setLoaded]=useState(false),[error,setError]=useState(''),[loadError,setLoadError]=useState(''),[schedulerError,setSchedulerError]=useState('');
   const [search,setSearch]=useState(''),[projectFilter,setProjectFilter]=useState('all');
   const [editor,setEditor]=useState<{config:ScheduleConfig;revision?:number;id?:string}>();
@@ -80,15 +94,17 @@ export default function Schedules({selectedId,onSelect,onQuest,projects,models,r
     </>}
   </>;
   const visible=items.filter(s=>(projectFilter==='all'||(projectFilter==='unassigned'?!s.projectId:s.projectId===projectFilter))&&`${s.name} ${s.objective}`.toLowerCase().includes(search.toLowerCase()));
+  const plannerNow = Date.now();
+  const plannerGroups = guildhall ? (['overdue','today','tomorrow','upcoming','disabled'] as const).map(key=>({key,label:{overdue:'Past due',today:'Today',tomorrow:'Tomorrow',upcoming:'Upcoming',disabled:'Disabled'}[key],schedules:visible.filter(s=>plannerGroup(s,plannerNow)===key)})).filter(group=>group.schedules.length) : [{key:'all',label:'',schedules:visible}];
   return <div className="schedules-page page-scroll">
-    {discard&&<ConfirmDialog title="Discard unsaved changes?" description="Your schedule changes have not been saved." confirmLabel="Discard changes" cancelLabel="Keep editing" onClose={()=>setDiscard(undefined)} onConfirm={()=>{const proceed=discard.proceed;dirty.current=false;setDiscard(undefined);proceed();}}/>}
-    {confirmDelete&&<ConfirmDialog title={`Delete “${confirmDelete.name}”?`} description={`Future runs will stop. Existing quests and their results will be kept.${confirmDelete.blockedBy?' Its existing quest will continue.':''}`} confirmLabel="Delete schedule" cancelLabel="Keep schedule" onClose={()=>setConfirmDelete(undefined)} onConfirm={()=>void action(confirmDelete,'delete')}/>}
+    {discard&&<ConfirmDialog intent="danger" title="Discard unsaved changes?" description="Your schedule changes have not been saved." confirmLabel="Discard changes" cancelLabel="Keep editing" onClose={()=>setDiscard(undefined)} onConfirm={()=>{const proceed=discard.proceed;dirty.current=false;setDiscard(undefined);proceed();}}/>}
+    {confirmDelete&&<ConfirmDialog intent="danger" title={`Delete “${confirmDelete.name}”?`} description={`Future runs will stop. Existing quests and their results will be kept.${confirmDelete.blockedBy?' Its existing quest will continue.':''}`} confirmLabel="Delete schedule" cancelLabel="Keep schedule" onClose={()=>setConfirmDelete(undefined)} onConfirm={()=>void action(confirmDelete,'delete')}/>}
     <div className="page-header-sticky schedule-sticky"><div className="schedule-heading page-heading">
-      <div>{selectedId&&<Breadcrumbs current={editor?(editor.id?'Edit schedule':'Create schedule'):selected?.name??'Schedule'} items={[{label:'Schedules',onClick:()=>onSelect()}]}/>}<div className="schedule-title-line"><h1>{editor?(editor.id?'Edit schedule':'Create schedule'):selectedId?selected?.name??'Schedule':'Schedules'}</h1>{selected&&!editor&&<span className={`schedule-state ${selected.enabled?'enabled':''}`}>{selected.enabled?'Enabled':'Paused'}</span>}</div>{selected&&!editor&&<span className="schedule-header-timing" tabIndex={0} aria-describedby="schedule-timing-help">
+      <div>{selectedId&&<Breadcrumbs current={editor?(editor.id?'Edit schedule':'Create schedule'):selected?.name??'Schedule'} items={[{label:'Schedules',onClick:()=>onSelect()}]}/>}<div className="schedule-title-line"><h1>{editor?(editor.id?'Edit schedule':'Create schedule'):selectedId?selected?.name??'Schedule':'Schedules'}</h1>{selected&&!editor&&<span className={`schedule-state ${selected.enabled?'enabled':''}`}>{selected.enabled?'Enabled':'Paused'}</span>}</div>{!selectedId&&<p className="guildhall-page-subtitle">Run and manage automated tasks and scheduled workflows.</p>}{selected&&!editor&&<span className="schedule-header-timing" tabIndex={0} aria-describedby="schedule-timing-help">
         {recurrenceSummary(selected.recurrence).split(' · ').slice(0,2).join(' at ')}{selected.enabled&&` · Next ${new Date(selected.nextAt).toLocaleDateString(undefined,{timeZone:selected.recurrence.timezone,weekday:'long',day:'numeric',month:'long'})}`}
         <span className="schedule-timing-tooltip" id="schedule-timing-help" role="tooltip">{selected.recurrence.timezone}{selected.enabled?` · Next run: ${dates(selected.nextAt,selected.recurrence.timezone)}`:''}</span>
       </span>}</div>
-      {!editor&&(selected?<div className="schedule-actions">{controls(selected,'primary')}<ScheduleMenu name={selected.name} header>{controls(selected,'secondary')}</ScheduleMenu></div>:!selectedId&&<div className="schedule-actions"><BoardControls search={search} onSearch={setSearch} projectFilter={projectFilter} onProjectFilter={setProjectFilter} projects={projects} searchLabel="Search schedules" searchPlaceholder="Find a schedule…" filterLabel="Filter schedules by project"/><button className="button small" onClick={()=>onSelect('new')}><Icon name="plus" size={16}/>Create schedule</button></div>)}
+      {!editor&&(selected?<div className="schedule-actions">{controls(selected,'primary')}<ScheduleMenu name={selected.name} header>{controls(selected,'secondary')}</ScheduleMenu></div>:!selectedId&&<div className="schedule-actions"><BoardControls search={search} onSearch={setSearch} projectFilter={projectFilter} onProjectFilter={setProjectFilter} projects={projects} searchLabel="Search schedules" searchPlaceholder="Find a schedule…" filterLabel="Filter schedules by project"/><button className="button primary small" onClick={()=>onSelect('new')}><Icon name="plus" size={16}/>Create schedule</button></div>)}
     </div>{selected&&!editor&&<div className="detail-tabs schedule-detail-tabs"><button className={tab==='overview'?'selected':''} aria-pressed={tab==='overview'} onClick={()=>setTab('overview')}><Icon name="document" size={15}/>Overview</button><button className={tab==='history'?'selected':''} aria-pressed={tab==='history'} onClick={()=>setTab('history')}><Icon name="clock" size={15}/>Run history<span>{total}</span></button></div>}</div>
     {(error||loadError)&&<div className="inline-error" role="alert">{error||loadError}</div>}{schedulerError&&<div className="inline-error" role="alert">Scheduling needs attention: {schedulerError}</div>}
     {editor?<ScheduleEditor key={`${editor.id??selectedId}:${editor.revision??0}`} initial={editor.config} allowStarter={!editor.id&&!selectedId?.startsWith('draft:')} projects={projects} models={models} busy={busy} onDirty={value=>{dirty.current=value;}} onCancel={closeEditor} onSave={async config=>{
@@ -107,12 +123,18 @@ export default function Schedules({selectedId,onSelect,onQuest,projects,models,r
         {total>20&&<div className="schedule-pagination"><button className="button small" disabled={offset===0} onClick={()=>setOffset(v=>Math.max(0,v-20))}>Newer</button><span>{offset+1}–{Math.min(offset+20,total)} of {total}</span><button className="button small" disabled={offset+20>=total} onClick={()=>setOffset(v=>v+20)}>Older</button></div>}
       </section>}
     </>:selectedId?<div className="board-empty"><div className="empty-emblem"><Icon name="calendar" size={30}/></div><p>{selectedId.startsWith('draft:')?'Loading schedule draft…':'This schedule is no longer available. Its existing quests are kept.'}</p><button className="button" onClick={()=>onSelect()}>All schedules</button></div>:<>
-      {visible.length?<div className="quest-grid schedule-list">{visible.map(s=><article className="quest-card schedule-card" key={s.id}>
+      {visible.length?<div className="quest-grid schedule-list">{plannerGroups.map(group=><section className="planner-group" key={group.key}>
+        <h2 className="planner-group-heading guildhall-record-only">{group.label}</h2>
+        {group.schedules.map(s=><article className="quest-card schedule-card" key={s.id} style={{order:visible.indexOf(s)}}>
         <button className="quest-card-open schedule-card-open" onClick={()=>onSelect(s.id)}>
+          <span className="record-schedule-icon guildhall-record-only"><Icon name="calendar" size={22}/></span>
           <div className="quest-card-top"><span className="quest-monogram"><Icon name="calendar" size={22}/></span><span className={`schedule-state ${s.enabled?'enabled':''}`}>{s.enabled?'Enabled':'Paused'}</span></div>
-          <h2>{s.name}</h2><p>{s.objective}</p>
+          <h2>{s.name}</h2>
+          <time className="planner-next-date" dateTime={new Date(s.nextAt).toISOString()}>{s.enabled ? 'Next' : 'Paused · planned'} {dates(s.nextAt, s.recurrence.timezone)}</time>
+          <p>{s.objective}</p>
           <div className="quest-card-footer"><span className="schedule-card-recurrence"><Icon name="clock" size={14}/><span>{recurrenceSummary(s.recurrence)}</span></span><span className="quest-open-icon"><Icon name="right" size={15}/></span></div>
-        </button><ScheduleMenu name={s.name}>{controls(s)}</ScheduleMenu></article>)}</div>:<div className="board-empty"><div className="empty-emblem"><Icon name="calendar" size={30}/></div><h2>{items.length?'No schedules match':'No schedules yet'}</h2><p>{items.length?'Try another filter or a different search.':'Set up recurring work, such as a morning briefing or weekly review.'}</p>{!items.length&&<button className="button primary" onClick={()=>onSelect('new')}>Create schedule</button>}</div>}
+        </button><div className="record-schedule-actions guildhall-record-only"><span className={`record-schedule-state ${s.enabled?'enabled':''}`}>{s.enabled?'Enabled':'Disabled'}</span><button className="button small" disabled={busy||!!s.blockedBy||s.preparing} aria-label={`Run ${s.name} now`} onClick={()=>void action(s,'run')}>Run now</button></div><ScheduleMenu name={s.name}>{controls(s)}</ScheduleMenu></article>)}
+      </section>)}</div>:<div className="board-empty"><div className="empty-emblem"><Icon name="calendar" size={30}/></div><h2>{items.length?'No schedules match':'No schedules yet'}</h2><p>{items.length?'Try another filter or a different search.':'Set up recurring work, such as a morning briefing or weekly review.'}</p>{!items.length&&<button className="button primary" onClick={()=>onSelect('new')}>Create schedule</button>}</div>}
     <div className="board-footnote"><Icon name="clock" size={15}/><span>Schedules run while Guildmaster is running and your computer is awake.</span></div>
     </>}
   </div>;

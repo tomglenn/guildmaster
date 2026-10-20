@@ -1,0 +1,99 @@
+/* Match the supplied study mockups without changing the other themes. */
+.guildhall-brand-mark, .guildhall-brand-name, .guildhall-page-subtitle, .guildhall-new-quest { display: none; }
+.quest-board-heading-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.header-search-control { display: flex; align-items: center; min-width: 0; }
+.header-search-control:not(.is-open) > .header-search,
+.header-search-control.is-open > .search-toggle { display: none; }
+
+:root[data-theme="guildhall"] .app-shell {
+  grid-template-columns: 210px minmax(0, 1fr); padding: 22px 24px 24px 20px; gap: 14px;
+}
+:root[data-theme="guildhall"] .main { padding: 12px 10px 16px; --page-padding: 24px; }
+:root[data-theme="guildhall"] .brand {
+  display: grid; grid-template-columns: 23px minmax(0, 1fr); gap: 3px 8px;
+  padding: 14px 9px 18px; align-items: center;
+}
+:root[data-theme="guildhall"] .brand::after { content: none; }
+:root[data-theme="guildhall"] .guildhall-brand-mark { display: flex; grid-column: 1; grid-row: 1; color: #d6ad5d; }
+:root[data-theme="guildhall"] .guildhall-brand-name { display: block; grid-column: 2; grid-row: 1; font-size: 17px; color: #f6e3b8; }
+:root[data-theme="guildhall"] .brand-logo { grid-column: 1; grid-row: 2; width: 20px; height: 20px; }
+:root[data-theme="guildhall"] .brand-version { grid-column: 2; grid-row: 2; font-size: 10px; color: #cbb58c; }
+:root[data-theme="guildhall"] .nav-item { font-size: 14px; padding: 9px 10px; }
+:root[data-theme="guildhall"] .nav-item.active { border: 1px solid #bd955c80; box-shadow: inset 0 1px #f2d18c16; padding: 8px 9px; }
+:root[data-theme="guildhall"] .nav-item svg { width: 17px; height: 17px; }
+:root[data-theme="guildhall"] .quests-label { border-top: 1px solid #aa804638; padding-top: 14px; margin: 20px 8px 4px; font-size: 11px; }
+:root[data-theme="guildhall"] .quests-label > span:last-child { font-size: 11px; }
+:root[data-theme="guildhall"] .recent-quest { padding: 8px; gap: 3px; }
+:root[data-theme="guildhall"] .recent-quest-title { font-size: 13px; line-height: 1.45; }
+:root[data-theme="guildhall"] .recent-quest .badge { font-size: 11px; }
+:root[data-theme="guildhall"] .sidebar-bottom { font-size: 11px; }
+
+/* The page toolbar stays above, rather than inside, the wooden noticeboard. */
+:root[data-theme="guildhall"] .guildhall-page-subtitle { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 4px; }
+:root[data-theme="guildhall"] .guildhall-new-quest { display: inline-flex; }
+:root[data-theme="guildhall"] .header-search-control:not(.is-open) > .header-search { display: flex; }
+:root[data-theme="guildhall"] .header-search-control > .search-toggle { display: none; }
+:root[data-theme="guildhall"] .header-search-control:not(.is-open) .header-search > .icon-button { visibility: hidden; }
+:root[data-theme="guildhall"] .header-search { width: 186px; min-width: 0; padding: 5px 8px; height: 34px; }
+:root[data-theme="guildhall"] .header-search input { width: 100%; min-width: 0; font-size: 12px; }
+:root[data-theme="guildhall"] .header-search .icon-button { width: 18px; height: 22px; }
+:root[data-theme="guildhall"] .page-heading { gap: 12px; }
+:root[data-theme="guildhall"] .board .page-heading { padding-bottom: 8px; }
+:root[data-theme="guildhall"] .board-toolbar { margin-bottom: 12px; }
+:root[data-theme="guildhall"] .board .filter-tabs { gap: 18px; }
+:root[data-theme="guildhall"] .board .filter-tabs button { font-size: 12px; padding-bottom: 10px; }
+:root[data-theme="guildhall"] .board > .quest-grid { gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+:root[data-theme="guildhall"] .board .quest-card-open { padding: 10px 12px; }
+:root[data-theme="guildhall"] .board .quest-card-top { margin-bottom: 8px; }
+:root[data-theme="guildhall"] .board .quest-monogram { width: 30px; height: 30px; }
+:root[data-theme="guildhall"] .board .quest-card h2 { font-family: var(--display); font-size: 18px; line-height: 1.3; margin-bottom: 8px; }
+:root[data-theme="guildhall"] .board .quest-card p { font-size: 13px; line-height: 1.55; -webkit-line-clamp: 3; }
+:root[data-theme="guildhall"] .board .quest-card .badge { font-size: 11px; }
+:root[data-theme="guildhall"] .board .quest-card-footer { font-size: 11px; margin-top: 14px; padding-top: 10px; }
+:root[data-theme="guildhall"] .board .quest-card-controls { padding: 0 12px 8px; }
+:root[data-theme="guildhall"] .board-footnote { font-size: 11px; padding-top: 12px; }
+
+/* Book typography in prose; commands and code retain their technical typeface. */
+:root[data-theme="guildhall"] .transcript .markdown { font-family: Georgia, 'Palatino Linotype', serif; font-size: calc(var(--conversation-font-size) * 1.0667); line-height: 1.6; }
+:root[data-theme="guildhall"] .transcript .markdown pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .875em; }
+:root[data-theme="guildhall"] .transcript .markdown :is(code, .code-header) { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+:root[data-theme="guildhall"] .transcript .message-meta { font-size: 11px; }
+:root[data-theme="guildhall"] .transcript .message-meta strong { font-size: 13px; }
+:root[data-theme="guildhall"] .message-user { max-width: 68%; padding: 12px 14px; }
+:root[data-theme="guildhall"] .message-assistant { padding-left: 44px; }
+:root[data-theme="guildhall"] .composer { padding: 10px 12px 8px; }
+:root[data-theme="guildhall"] .composer textarea { font-size: var(--conversation-font-size); }
+:root[data-theme="guildhall"] .composer-meta { padding-top: 4px; margin-top: 5px; border-top: 0; }
+
+@media (max-width: 1099px) {
+  :root[data-theme="guildhall"] .app-shell { grid-template-columns: 180px minmax(0, 1fr); padding: 18px 18px 20px 14px; gap: 12px; }
+  :root[data-theme="guildhall"] .main { --page-padding: 18px; }
+  :root[data-theme="guildhall"] .board > .quest-grid { padding: 28px 18px; gap: 10px; }
+  :root[data-theme="guildhall"] .board .quest-card-open { padding: 8px; }
+  :root[data-theme="guildhall"] .board .quest-card h2 { font-size: 16px; }
+  :root[data-theme="guildhall"] .board .quest-card-top { gap: 4px; }
+}
+@media (max-width: 850px) {
+  :root[data-theme="guildhall"] .board > .quest-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 650px) {
+  :root[data-theme="guildhall"] .app-shell { grid-template-columns: minmax(0, 1fr); padding: 0; gap: 6px; }
+  :root[data-theme="guildhall"] .brand { padding: 0; gap: 0 6px; }
+  :root[data-theme="guildhall"] .guildhall-brand-name { font-size: 14px; }
+  :root[data-theme="guildhall"] .sidebar { gap: 5px; }
+  :root[data-theme="guildhall"] .nav-item { font-size: 13px; padding: 7px 6px; }
+  :root[data-theme="guildhall"] .nav-item.active { padding: 6px 5px; }
+  :root[data-theme="guildhall"] .main { --page-padding: 14px; padding: 10px 6px 14px; }
+  :root[data-theme="guildhall"] .quest-board-heading-actions { width: 100%; gap: 8px; }
+  :root[data-theme="guildhall"] .board-controls { flex: 1 1 100%; min-width: 0; gap: 6px; }
+  :root[data-theme="guildhall"] .header-search-control { flex: 1; }
+  :root[data-theme="guildhall"] .header-search { width: 100%; }
+  :root[data-theme="guildhall"] .guildhall-new-quest { padding: 8px 12px; }
+  :root[data-theme="guildhall"] .board > .quest-grid { padding: 24px 16px; gap: 16px; }
+  :root[data-theme="guildhall"] .message-user { max-width: 92%; }
+  :root[data-theme="guildhall"] .message-assistant { padding-left: 0; }
+}
+@media (forced-colors: active) {
+  :root[data-theme="guildhall"] .guildhall-brand-mark { color: CanvasText; }
+  :root[data-theme="guildhall"] .nav-item.active { border-color: Highlight; }
+}

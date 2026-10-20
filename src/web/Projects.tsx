@@ -108,9 +108,9 @@ export default function Projects({ projects, onSave, onGuildmaster, onAction }: 
 
   if (!current && !editor && !selectedId) return <div className="projects-page settings-page page-scroll">
     <div className="page-header-sticky">
-    <div className="page-heading"><div><h1>Projects</h1></div>
+    <div className="page-heading"><div><h1>Projects</h1><p className="guildhall-page-subtitle">Manage your projects, repositories and configuration.</p></div>
       <div className="project-directory-actions"><SearchControl value={search} onChange={setSearch} label="Search projects" placeholder="Find a project…"/>
-        <button className="button small" onClick={() => start('new')}><Icon name="plus" size={15}/>Add project</button></div></div>
+        <button className="button primary small" onClick={() => start('new')}><Icon name="plus" size={15}/>Add project</button></div></div>
     <div className="detail-tabs project-directory-tabs" aria-label="Project status">
       <button className={scope === 'current' ? 'selected' : ''} aria-pressed={scope === 'current'} onClick={() => setScope('current')}><Icon name="grid" size={15}/>Current<span>{matchedProjects.filter(project => !project.archivedAt).length}</span></button>
       <button className={scope === 'archived' ? 'selected' : ''} aria-pressed={scope === 'archived'} onClick={() => setScope('archived')}><Icon name="archive" size={15}/>Archived<span>{matchedProjects.filter(project => !!project.archivedAt).length}</span></button>
@@ -120,9 +120,17 @@ export default function Projects({ projects, onSave, onGuildmaster, onAction }: 
     {filteredProjects.length ? <div className="quest-grid project-directory" aria-label="Registered projects">{filteredProjects.map(project => <button className="quest-card project-directory-card" key={project.id} aria-label={`Open project ${project.name}`} onClick={() => open(project)}>
       <div className="quest-card-top"><span className="quest-monogram"><Icon name={project.archivedAt ? 'archive' : 'folder'} size={22}/></span>
         <span className="project-repository-count">{project.repositories.length} {project.repositories.length === 1 ? 'repository' : 'repositories'}</span></div>
-      <h2>{project.name}</h2>
+      <h2>{project.name}<span className={`record-project-state guildhall-record-only ${project.archivedAt ? 'is-archived' : ''}`}>{project.archivedAt ? 'Archived' : 'Active'}</span></h2>
+      {project.repositories.find(repo => repo.description?.trim())?.description && <p className="record-project-description guildhall-record-only">{project.repositories.find(repo => repo.description?.trim())!.description}</p>}
+      <div className="record-project-metadata guildhall-record-only">
+        {project.repositories[0] && <span title={project.repositories[0].path}><Icon name="folder" size={13}/><code>{project.repositories[0].path}</code></span>}
+        <span><Icon name="branch" size={13}/>{project.repositories.length} {project.repositories.length === 1 ? 'repository' : 'repositories'}</span>
+        {Number.isFinite(project.updatedAt) && <span><Icon name="clock" size={13}/>Updated <time dateTime={new Date(project.updatedAt).toISOString()}>{new Date(project.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</time></span>}
+      </div>
+      <span className="record-open guildhall-record-only"><Icon name="right" size={14}/>Open</span>
       <ul className="project-repository-preview">{project.repositories.slice(0, 3).map(repo => <li key={repo.id}>
         <div><Icon name="branch" size={13}/><span title={repo.name}>{repo.name}</span></div>
+        <code className="register-path" title={repo.path}>{repo.path}</code>
         {project.repositories.length === 1 && repo.description && <p>{repo.description}</p>}
       </li>)}</ul>
       <div className="project-repository-card-footer">{project.repositories.length > 3 && <span className="project-more-repositories">+{project.repositories.length - 3} more</span>}<span className="quest-open-icon"><Icon name="right" size={15}/></span></div>

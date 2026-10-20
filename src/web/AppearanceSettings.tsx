@@ -13,9 +13,9 @@ export default function AppearanceSettings() {
   return <div className="appearance-settings">
     <section className="settings-section">
       <div className="settings-section-title"><div><h2>Theme</h2><p>Choose a theme or follow your system appearance.</p></div></div>
-      <fieldset className="theme-options"><legend className="sr-only">Theme</legend>{(['system', 'light', 'dark'] as const).map(theme => <label className={`theme-option ${appearance.theme === theme ? 'selected' : ''}`} key={theme}>
+      <fieldset className="theme-options"><legend className="sr-only">Theme</legend>{(['system', 'light', 'dark', 'guildhall'] as const).map(theme => <label className={`theme-option ${appearance.theme === theme ? 'selected' : ''}`} key={theme}>
         <span className={`theme-preview ${theme === 'system' ? 'theme-preview-system' : ''}`} aria-hidden="true">{(theme === 'system' ? ['light', 'dark'] : [theme]).map(tone => <span className="theme-mini" data-tone={tone} key={tone}><span className="theme-mini-sidebar"/><span className="theme-mini-lines"><i/><i/><i/></span></span>)}</span>
-        <span className="theme-option-label"><input type="radio" name="theme" value={theme} checked={appearance.theme === theme} onChange={() => change({ theme })}/>{theme === 'system' ? 'System' : theme === 'light' ? 'Light' : 'Dark'}</span>
+        <span className="theme-option-label"><input type="radio" name="theme" value={theme} checked={appearance.theme === theme} onChange={() => change({ theme })}/>{{ system: 'System', light: 'Light', dark: 'Dark', guildhall: 'Guildhall' }[theme]}</span>
       </label>)}</fieldset>
     </section>
     <section className="settings-section">

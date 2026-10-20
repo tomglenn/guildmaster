@@ -1,0 +1,87 @@
+/* Shared structure: code controls must also work outside Guildhall. */
+.markdown .code-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.markdown .code-language { min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.markdown .code-copy-status { margin-left: auto; font-size: 12px; }
+.markdown .code-copy {
+  flex: 0 0 auto; padding: 4px 10px; min-height: 30px; border: 1px solid var(--line, #777);
+  border-radius: 4px; background: var(--surface, #eee); color: var(--text, #222);
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.markdown .code-copy:disabled { cursor: wait; }
+.markdown :is(.code-copy, pre, .markdown-table):focus-visible { outline: 2px solid var(--accent, #9b772c); outline-offset: 3px; }
+.markdown .code-block { min-width: 0; max-width: 100%; }
+.markdown .code-block pre { max-width: 100%; overflow-x: auto; white-space: pre; word-break: normal; overflow-wrap: normal; tab-size: 4; }
+
+/* Guildhall reading surfaces: ink on vellum, with quiet ledger annotations. */
+:root[data-theme="guildhall"] .markdown {
+  color: var(--guildhall-ink, #372d20); line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+:root[data-theme="guildhall"] .markdown :is(h1,h2,h3,h4,h5,h6) {
+  color: #342719; font-family: var(--display, Georgia, serif); line-height: 1.3;
+  margin: 1.4em 0 .55em; font-weight: 650; text-wrap: pretty;
+}
+:root[data-theme="guildhall"] .markdown h1 { font-size: 1.65em; }
+:root[data-theme="guildhall"] .markdown h2 { font-size: 1.4em; }
+:root[data-theme="guildhall"] .markdown h3 { font-size: 1.2em; }
+:root[data-theme="guildhall"] .markdown h4 { font-size: 1.08em; }
+:root[data-theme="guildhall"] .markdown h5 { font-size: 1em; }
+:root[data-theme="guildhall"] .markdown h6 { font-size: .95em; font-style: italic; }
+:root[data-theme="guildhall"] .markdown > :first-child { margin-top: 0; }
+:root[data-theme="guildhall"] .markdown > :last-child { margin-bottom: 0; }
+:root[data-theme="guildhall"] .markdown p { margin-bottom: 1em; }
+:root[data-theme="guildhall"] .markdown strong { color: #342719; font-weight: 650; }
+:root[data-theme="guildhall"] .markdown :is(em, del) { color: inherit; }
+:root[data-theme="guildhall"] .markdown a { color: #70441d; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+:root[data-theme="guildhall"] .markdown a:hover { color: #48260e; text-decoration-thickness: 2px; }
+:root[data-theme="guildhall"] .markdown a:focus-visible { outline: 2px solid #805922; outline-offset: 3px; }
+:root[data-theme="guildhall"] .markdown .image-link::before { content: '↗ '; }
+:root[data-theme="guildhall"] .markdown :is(ul, ol) { padding-left: 1.5em; margin-bottom: 1em; }
+:root[data-theme="guildhall"] .markdown li { margin: .35em 0; padding-left: .15em; }
+:root[data-theme="guildhall"] .markdown li::marker { color: #735c3a; }
+:root[data-theme="guildhall"] .markdown li :is(ul, ol) { margin: .4em 0; }
+:root[data-theme="guildhall"] .markdown .task-list-item input { accent-color: #695b34; opacity: 1; width: 14px; height: 14px; vertical-align: middle; }
+:root[data-theme="guildhall"] .markdown blockquote {
+  margin: 1.2em 0; padding: .25em 0 .25em 1em; border: 0; border-left: 3px solid #947a51;
+  background: transparent; border-radius: 0; color: #61503a;
+}
+:root[data-theme="guildhall"] .markdown hr { border: 0; border-top: 1px solid #a58b65; margin: 1.6em 0; }
+:root[data-theme="guildhall"] .markdown .markdown-table { border: 0; border-block: 1px solid #927954; border-radius: 0; overflow-x: auto; margin: 1.2em 0; }
+:root[data-theme="guildhall"] .markdown table { background: #f0dfba55; color: #3b3022; }
+:root[data-theme="guildhall"] .markdown :is(th, td) { padding: .65em .85em; border-bottom: 1px solid #a28b6559; }
+:root[data-theme="guildhall"] .markdown th { color: #3b3022; background: #a98b4f26; font-weight: 650; }
+:root[data-theme="guildhall"] .markdown tbody tr:nth-child(even) { background: #a98b4f0f; }
+:root[data-theme="guildhall"] .markdown code { color: #553c26; background: #72582e14; border-radius: 2px; padding: .1em .25em; }
+
+/* Functional dark technical inserts, not decorative picture frames. */
+:root[data-theme="guildhall"] .markdown .code-block {
+  --insert-bg: var(--guildhall-code-bg, #272721);
+  --insert-ink: var(--guildhall-code-ink, #f4ecda);
+  --insert-muted: var(--guildhall-code-muted, #c5b99e);
+  --insert-rule: var(--guildhall-code-rule, #74684e);
+  margin: 1.2em 0; background: var(--insert-bg); color: var(--insert-ink);
+  border: 1px solid var(--insert-rule); border-radius: 5px; box-shadow: 0 2px 5px #30200f1a;
+}
+:root[data-theme="guildhall"] .markdown .code-header { padding: 8px 12px; color: var(--insert-muted); border-bottom: 1px solid var(--insert-rule); background: transparent; }
+:root[data-theme="guildhall"] .markdown .code-language { font-size: 12px; }
+:root[data-theme="guildhall"] .markdown .code-copy {
+  background: #39372d; color: var(--insert-ink); border: 1px solid #897958;
+  box-shadow: none; text-shadow: none; font-family: inherit; border-radius: 3px;
+}
+:root[data-theme="guildhall"] .markdown .code-copy:hover { background: #514938; border-color: #c8ae7e; }
+:root[data-theme="guildhall"] .markdown .code-copy-status { color: var(--insert-ink); }
+:root[data-theme="guildhall"] .markdown .code-block pre { padding: 14px 16px; margin: 0; color: var(--insert-ink); background: var(--insert-bg); line-height: 1.65; }
+:root[data-theme="guildhall"] .markdown .code-block pre code { color: inherit; background: transparent; border: 0; padding: 0; border-radius: 0; font-size: .9em; }
+:root[data-theme="guildhall"] .markdown .code-block :is(pre, .code-copy):focus-visible { outline-color: #e8c984; outline-offset: -3px; }
+:root[data-theme="guildhall"] .markdown .code-block ::selection { background: #77633e; color: #fff8e8; }
+:root[data-theme="guildhall"] .markdown .code-token-comment { color: #b9b49c; font-style: italic; }
+:root[data-theme="guildhall"] .markdown .code-token-string { color: #d1d99f; }
+:root[data-theme="guildhall"] .markdown .code-token-number { color: #e7bb90; }
+:root[data-theme="guildhall"] .markdown .code-token-keyword { color: #e7c681; }
+:root[data-theme="guildhall"] .markdown .code-token-meta { color: #b5cfce; }
+:root[data-theme="guildhall"] .markdown .code-token-inserted { color: #c9dda9; background: #67834324; }
+:root[data-theme="guildhall"] .markdown .code-token-deleted { color: #efb4a3; background: #a34f4224; }
+@media (forced-colors: active) {
+  :root[data-theme="guildhall"] .markdown .code-block { border-color: CanvasText; }
+  :root[data-theme="guildhall"] .markdown .code-copy { border-color: ButtonText; }
+}

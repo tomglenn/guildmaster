@@ -105,6 +105,6 @@ export default function Composer({ draftKey, onSend, disabled, placeholder, foot
     </form>
     {preview && <ImagePreview src={`data:${preview.mimeType};base64,${preview.data}`} name={preview.name} onClose={() => setPreviewId(undefined)}/>}
     {error && <div className="inline-error composer-error" role="alert"><span>{error}</span><button type="button" className="icon-button" aria-label="Dismiss message error" title="Dismiss" onClick={() => { setError(''); input.current?.focus({ preventScroll: true }); }}><Icon name="close" size={16}/></button></div>}
-    <div className="composer-meta" id={hintId}>{footer && <div className="composer-hint">{footer}</div>}<p className={disabled ? 'sr-only' : 'composer-shortcut'}>{disabled ? 'Drafting is available · Sending is paused' : 'Enter to send · Shift + Enter for a new line'}</p></div>
+    <div className="composer-meta" id={hintId}>{footer && <div className="composer-hint">{footer}</div>}<p className={disabled ? 'sr-only' : 'composer-shortcut'}>{disabled ? 'Drafting is available · Sending is paused' : <><kbd>Enter</kbd> to send · <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line</>}</p></div>
   </div>;
 }

@@ -8,8 +8,11 @@ export default function SearchControl({ value, onChange, label, placeholder }: {
   const input = useRef<HTMLInputElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   useEffect(() => { if (open) input.current?.focus(); }, [open]);
-  const close = () => { onChange(''); setOpen(false); requestAnimationFrame(() => button.current?.focus()); };
-  return open || value ? <div className="header-search">
+  const close = () => { onChange(''); setOpen(false); requestAnimationFrame(() => {
+    if (button.current?.getClientRects().length) button.current.focus();
+    else input.current?.focus();
+  }); };
+  return <div className={`header-search-control ${open || value ? 'is-open' : ''}`}><div className="header-search">
     <Icon name="search" size={16}/>
     <input ref={input} aria-label={label} placeholder={placeholder} value={value}
       onChange={event => onChange(event.target.value)}
@@ -18,5 +21,5 @@ export default function SearchControl({ value, onChange, label, placeholder }: {
     <button className="icon-button" aria-label="Clear and close search" onMouseDown={event => event.preventDefault()} onClick={close}>
       <Icon name="close" size={14}/>
     </button>
-  </div> : <button ref={button} className="button small" onClick={() => setOpen(true)}><Icon name="search" size={16}/>Search</button>;
+  </div><button ref={button} className="button small search-toggle" onClick={() => setOpen(true)}><Icon name="search" size={16}/>Search</button></div>;
 }

@@ -1,4 +1,5 @@
 import WorkingIndicator from './WorkingIndicator';
+import Icon from './Icon';
 import useLiveToolCalls from './useLiveToolCalls';
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import Markdown from './Markdown';
@@ -51,9 +52,10 @@ export default function Transcript({ questId, messages, toolCalls: savedToolCall
     // Bound session memory; initial history never animates even after eviction.
     while (seenConversationEntries.size > 20000) seenConversationEntries.delete(seenConversationEntries.values().next().value!);
   });
-  const renderMessage = (message: TranscriptMessage) => <article data-message-id={message.id} tabIndex={-1} className={`message message-${message.role}`}><div className="message-body"><div className="message-meta"><strong>{message.source === 'schedule' ? 'Scheduled task' : message.source === 'guildmaster' ? 'Guildmaster' : message.source === 'quest_lead' ? 'Quest lead' : message.role === 'user' ? 'You' : message.role === 'system' ? 'Activity' : assistantLabel}</strong><span>{date(message.createdAt)}</span>{message.request?.status === 'pending' && <span className="question-status">{questionsForLead ? 'Waiting for quest lead' : 'Needs your input'}</span>}</div><Markdown text={message.text} questId={questId}/>{questId && !!message.attachments?.length && <ConversationImages questId={questId} images={message.attachments}/>}</div></article>;
+  const crest = <span className="guildhall-crest" aria-hidden="true"><Icon name="compass" size={22}/></span>;
+  const renderMessage = (message: TranscriptMessage) => <article data-message-id={message.id} tabIndex={-1} className={`message message-${message.role}`}>{message.role === 'assistant' && crest}<div className="message-body"><div className="message-meta"><strong>{message.source === 'schedule' ? 'Scheduled task' : message.source === 'guildmaster' ? 'Guildmaster' : message.source === 'quest_lead' ? 'Quest lead' : message.role === 'user' ? 'You' : message.role === 'system' ? 'Activity' : assistantLabel}</strong><span>{date(message.createdAt)}</span>{message.request?.status === 'pending' && <span className="question-status">{questionsForLead ? 'Waiting for quest lead' : 'Needs your input'}</span>}</div><Markdown text={message.text} questId={questId}/>{questId && !!message.attachments?.length && <ConversationImages questId={questId} images={message.attachments}/>}</div></article>;
   return <div className="transcript" ref={container}>{entries.map(entry => entry.kind === 'tools'
     ? <ToolActivity key={entry.id} calls={entry.calls} arriving={arriving}/>
     : <NewEntry key={entry.id} id={entry.id} arriving={arriving}>{entry.kind === 'message' ? renderMessage(entry.message) : <DelegationRow agent={entry.agent} onOpen={entry.agent.questLink ? onOpenQuest : onOpenAgent}/>}</NewEntry>
-  )}{stream && <NewEntry key={`message:${stream.messageId}`} id={`message:${stream.messageId}`} arriving={arriving}><article data-message-id={stream.messageId} tabIndex={-1} className="message message-assistant"><div className="message-body"><div className="message-meta"><strong>{assistantLabel}</strong></div><Markdown text={stream.text} questId={questId}/></div></article></NewEntry>}<WorkingIndicator key={activeRunId ?? questId} label={progress}/></div>;
+  )}{stream && <NewEntry key={`message:${stream.messageId}`} id={`message:${stream.messageId}`} arriving={arriving}><article data-message-id={stream.messageId} tabIndex={-1} className="message message-assistant">{crest}<div className="message-body"><div className="message-meta"><strong>{assistantLabel}</strong></div><Markdown text={stream.text} questId={questId}/></div></article></NewEntry>}<WorkingIndicator key={activeRunId ?? questId} label={progress}/></div>;
 }

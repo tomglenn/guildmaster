@@ -1,6 +1,7 @@
 import React, { createElement as h, Fragment, useMemo } from 'react';
 import { lexer, type Token, type Tokens } from 'marked';
 import { decodeHTML } from 'entities';
+import CodeBlock from './CodeBlock.ts';
 
 // Parse Markdown, then build React elements. Agent output never becomes HTML.
 // Code tokens stay literal; entities are decoded only in prose and link fields.
@@ -46,12 +47,8 @@ function node(token: Token, key: number, questId?: string): React.ReactNode {
       return h(token.type, { key }, nodes(token.tokens, questId));
     case 'codespan':
       return h('code', { key }, token.text);
-    case 'code': {
-      const language = token.lang?.split(/\s+/)[0];
-      return h('div', { key, className: 'code-block' },
-        language ? h('div', { className: 'code-language' }, language) : null,
-        h('pre', null, h('code', null, token.text)));
-    }
+    case 'code':
+      return h(CodeBlock, { key, language: token.lang, text: token.text });
     case 'br':
     case 'hr':
       return h(token.type, { key });
@@ -84,9 +81,10 @@ function node(token: Token, key: number, questId?: string): React.ReactNode {
     }
     case 'table': {
       const cell = (entry: Tokens.TableCell, index: number) => h(entry.header ? 'th' : 'td', {
-        key: index, style: entry.align ? { textAlign: entry.align } : undefined,
+        key: index, scope: entry.header ? 'col' : undefined,
+        style: entry.align ? { textAlign: entry.align } : undefined,
       }, nodes(entry.tokens, questId));
-      return h('div', { key, className: 'markdown-table' }, h('table', null,
+      return h('div', { key, className: 'markdown-table', tabIndex: 0, role: 'region', 'aria-label': 'Markdown table' }, h('table', null,
         h('thead', null, h('tr', null, token.header.map(cell))),
         h('tbody', null, token.rows.map((row: Tokens.TableCell[], index: number) => h('tr', { key: index }, row.map(cell))))));
     }

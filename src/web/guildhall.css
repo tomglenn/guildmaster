@@ -1,0 +1,260 @@
+/* Opt-in presentation only. Shared components retain all interaction/layout logic.
+   Artwork never masks content and decorative layers never receive pointer input. */
+:root[data-theme="guildhall"] {
+  color-scheme: light;
+  --canvas: #f2e4c9;
+  --surface: #fbf1df;
+  --surface-raised: #eaddc3;
+  --surface-inset: #efe1c5;
+  --user-surface: #ead9b8;
+  --text: #2c2117;
+  --secondary: #493726;
+  --muted: #695139;
+  --line: #b5a080;
+  --sidebar: #211b16;
+  --primary: #654321;
+  --primary-hover: #4d2d13;
+  --on-primary: #fff3d6;
+  --accent: #704111;
+  --success: #315d35;
+  --warning: #794413;
+  --danger: #922f26;
+  --info: #315a70;
+  --code-surface: #faf3e7;
+  --code-text: #322b23;
+  --display: Georgia, 'Palatino Linotype', 'Book Antiqua', serif;
+  --guildhall-vellum: url('/themes/guildhall/vellum.webp');
+  --guildhall-leather: url('/themes/guildhall/leather.webp');
+  --guildhall-walnut: url('/themes/guildhall/walnut.webp');
+  --guildhall-brass: url('/themes/guildhall/brass-frame.webp');
+  --guildhall-frame-width: 9px;
+  --guildhall-rule: #95754d55;
+  --guildhall-contact: 0 2px 2px #160b06a6;
+  --guildhall-code-bg: #272721;
+  --guildhall-code-ink: #f4ecda;
+  --guildhall-code-muted: #c5b99e;
+  --guildhall-code-rule: #74684e;
+  --guildhall-radius: 3px;
+  --guildhall-writing: #fbf0d9;
+  --guildhall-overlay: #f4e6c8;
+  --guildhall-overlay-shadow: 0 6px 22px #21130755;
+  --guildhall-inset-shadow: inset 0 1px 3px #6143211c;
+}
+
+/* Preview colours never download theme art in other themes. */
+.theme-options { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: 640px; }
+.theme-mini[data-tone="guildhall"] { background: #f2e4c9; border: 1px solid #a18255; }
+.theme-mini[data-tone="guildhall"] .theme-mini-sidebar { background: #282019; }
+.theme-mini[data-tone="guildhall"] i { background: #9d7950; }
+.guildhall-sheet, .guildhall-crest { display: none; }
+
+/* The desk is visible at normal desktop widths, not only ultrawide windows. */
+:root[data-theme="guildhall"] .app-shell {
+  grid-template-columns: 224px minmax(0, 1fr);
+  padding: 28px clamp(24px, 4vw, 64px) 32px 24px;
+  gap: 22px;
+  background: #301c10 url('/themes/guildhall/desk-background.webp') center / cover no-repeat;
+}
+:root[data-theme="guildhall"] .main {
+  position: relative;
+  isolation: isolate;
+  border: 0;
+  padding: 16px 12px 22px;
+  background: none;
+  --page-padding: 26px;
+  --page-title-size: 27px;
+}
+
+/* Manuscript: fixed-scale corners and repeated edges/grain, independent of
+   transcript length. Content scrolls inside the sheet, never stretches it. */
+:root[data-theme="guildhall"] .guildhall-sheet {
+  --sheet-scale: .34;
+  display: grid;
+  grid-template-columns: calc(320px * var(--sheet-scale)) minmax(0, 1fr) calc(320px * var(--sheet-scale));
+  grid-template-rows: calc(240px * var(--sheet-scale)) minmax(0, 1fr) calc(360px * var(--sheet-scale));
+  position: absolute;
+  inset: 0;
+  filter: drop-shadow(0 3px 3px #29180d66);
+  pointer-events: none;
+  z-index: -1;
+}
+:root[data-theme="guildhall"] .guildhall-sheet > span { min-width: 0; min-height: 0; }
+:root[data-theme="guildhall"] :is(.sheet-tl, .sheet-tr, .sheet-bl, .sheet-br) { background-size: 100% 100%; background-repeat: no-repeat; }
+:root[data-theme="guildhall"] .sheet-tl { background-image: url('/themes/guildhall/main-tl.webp'); }
+:root[data-theme="guildhall"] .sheet-tr { background-image: url('/themes/guildhall/main-tr.webp'); }
+:root[data-theme="guildhall"] .sheet-bl { background-image: url('/themes/guildhall/main-bl.webp'); }
+:root[data-theme="guildhall"] .sheet-br { background-image: url('/themes/guildhall/main-br.webp'); }
+:root[data-theme="guildhall"] .sheet-top { background: url('/themes/guildhall/main-top.webp') left top / calc(1792px * var(--sheet-scale)) 100% repeat-x; }
+:root[data-theme="guildhall"] .sheet-bottom { background: url('/themes/guildhall/main-bottom.webp') left bottom / calc(1792px * var(--sheet-scale)) 100% repeat-x; }
+:root[data-theme="guildhall"] .sheet-left { background: url('/themes/guildhall/main-left.webp') left top / 100% calc(848px * var(--sheet-scale)) repeat-y; }
+:root[data-theme="guildhall"] .sheet-right { background: url('/themes/guildhall/main-right.webp') right top / 100% calc(848px * var(--sheet-scale)) repeat-y; }
+:root[data-theme="guildhall"] .sheet-centre { background: url('/themes/guildhall/main-centre.webp') left top / calc(1792px * var(--sheet-scale)) calc(848px * var(--sheet-scale)) repeat; }
+
+/* Leather navigation: fittings at the perimeter only, not around every link. */
+:root[data-theme="guildhall"] .sidebar {
+  position: relative;
+  border: 6px solid transparent;
+  border-radius: 5px;
+  background: linear-gradient(#100e0b55, #100e0b55), var(--guildhall-leather) center / cover;
+  color-scheme: dark;
+  color: #e6d1a7;
+  --text: #f6e3b8;
+  --secondary: #e6d1a7;
+  --muted: #cbb58c;
+  --line: #80633d;
+  --accent: #edc780;
+  --surface-raised: #433322;
+  --warning: #f4cb82;
+  --success: #b0d09b;
+  --danger: #ffb4a3;
+  --info: #b4d6e6;
+  box-shadow: 0 4px 12px #0007;
+}
+:root[data-theme="guildhall"] .sidebar::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: var(--guildhall-frame-width) solid transparent;
+  border-image: var(--guildhall-brass) 80 / var(--guildhall-frame-width) / 0 stretch;
+  filter: drop-shadow(0 1px 1px #000b);
+  pointer-events: none;
+  z-index: 2;
+}
+:root[data-theme="guildhall"] .brand { padding: 20px 12px; gap: 8px; flex-wrap: wrap; }
+:root[data-theme="guildhall"] .brand::after { content: 'Guildmaster'; font-variant: small-caps; letter-spacing: .035em; font-size: 20px; order: -1; width: 100%; }
+:root[data-theme="guildhall"] .brand-logo { width: 26px; height: 26px; }
+:root[data-theme="guildhall"] .sidebar-main { padding: 0 6px; }
+:root[data-theme="guildhall"] .nav-item { font-family: var(--display); font-size: 15px; border-radius: 3px; }
+:root[data-theme="guildhall"] .nav-item.active { background: #9b71382e; box-shadow: inset 2px 0 #c29c60; }
+:root[data-theme="guildhall"] .nav-item:hover:not(.active) { background: #b4946120; }
+:root[data-theme="guildhall"] .nav-item svg { color: var(--accent); }
+:root[data-theme="guildhall"] .recent-quest-title { font-family: var(--display); font-size: 15px; }
+:root[data-theme="guildhall"] .sidebar-bottom { margin: 0 6px; padding: 12px 4px; border-top: 1px solid #aa804644; }
+
+/* One ledger across all routes. Walnut is only an inset holding actual notices,
+   sized by its grid contents rather than filling the entire working surface. */
+:root[data-theme="guildhall"] .board > .quest-grid {
+  position: relative; isolation: isolate;
+  background: none; border: 0; border-radius: 0; box-shadow: none;
+  padding: 30px 24px; align-content: start;
+}
+:root[data-theme="guildhall"] .board > .quest-grid::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  border: 34px solid transparent;
+  border-image: url('/themes/guildhall/wooden-board.webp') 150 / 34px / 0 stretch;
+  background: url('/themes/guildhall/wooden-board-centre.webp') center / 800px auto repeat;
+  background-clip: padding-box;
+  filter: drop-shadow(0 2px 2px #29150766);
+}
+/* Registers and planner records use ink structure within the shared manuscript. */
+:root[data-theme="guildhall"] :is(.project-directory, .project-repository-grid, .schedule-list) { gap: 0; grid-template-columns: minmax(0, 1fr); }
+:root[data-theme="guildhall"] :is(.project-directory-card, .project-repository-card, .schedule-card) {
+  border: 0;
+  border-bottom: 1px solid var(--guildhall-rule);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 20px 12px;
+}
+:root[data-theme="guildhall"] :is(.project-directory-card, .project-repository-card, .schedule-card):hover { background: #ae895912; box-shadow: none; }
+:root[data-theme="guildhall"] :is(.project-directory-card, .project-repository-card) { min-height: 0; }
+:root[data-theme="guildhall"] :is(.project-directory-card, .project-repository-card, .schedule-card) .quest-card-top { margin-bottom: 8px; }
+:root[data-theme="guildhall"] :is(.project-directory-card, .project-repository-card) .project-repository-card-footer { padding-top: 8px; }
+:root[data-theme="guildhall"] .schedule-card { padding: 0; }
+:root[data-theme="guildhall"] .schedule-card-open > p { margin-bottom: 12px; }
+:root[data-theme="guildhall"] .schedule-card-open { padding: 20px 12px; border-radius: 0; }
+:root[data-theme="guildhall"] :is(.project-directory-card, .project-repository-card, .schedule-card) .quest-monogram {
+  background: transparent; color: var(--accent); width: 28px; height: 28px; border-radius: 0;
+}
+:root[data-theme="guildhall"] .schedule-card .quest-card-footer { border: 0; padding-top: 4px; }
+:root[data-theme="guildhall"] :is(.schedule-history-row, .schedule-sticky) { border-color: var(--guildhall-rule); }
+:root[data-theme="guildhall"] .schedule-instruction-panel { border: 0; border-left: 2px solid var(--guildhall-rule); border-radius: 0; background: #fbf1df88; }
+:root[data-theme="guildhall"] .project-repository-card-footer code { font-size: 12px; }
+
+/* Headers expose the true surface at rest, becoming opaque only on scroll. */
+:root[data-theme="guildhall"] .page-header-sticky { background: transparent; }
+:root[data-theme="guildhall"] .page-scroll[data-scrolled="true"] > .page-header-sticky { background: #f2e4c9fa; }
+:root[data-theme="guildhall"] :is(.quest-content, .quest-header, .topbar, .gm-composer, .quest-composer) { background: transparent; }
+:root[data-theme="guildhall"] :is(.gm-heading, .quest-header) { border-bottom: 1px solid var(--guildhall-rule); }
+:root[data-theme="guildhall"] .transcript .markdown { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.75; }
+:root[data-theme="guildhall"] .message-meta strong { font-family: var(--display); color: #67401e; }
+:root[data-theme="guildhall"] .message-assistant { position: relative; padding-left: 46px; }
+:root[data-theme="guildhall"] .guildhall-crest {
+  display: grid; place-items: center; position: absolute; left: 0; top: 0;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: #29241d; color: #d6b575; border: 1px solid #a68146;
+  box-shadow: 0 1px 2px #4b2a1644;
+}
+:root[data-theme="guildhall"] .message-user { background: #e2c99b40; border: 1px solid #a17d4926; border-radius: 5px; }
+/* Rich content and shared component treatments live in their dedicated sheets. */
+/* Notices only: ledger and planner entries are NOT pinned scraps of paper. */
+:root[data-theme="guildhall"] .board > .quest-grid { gap: 24px; }
+:root[data-theme="guildhall"] .board .quest-card {
+  color-scheme: light; color: #2c2117;
+  --surface: #fbf1df; --surface-raised: #eaddc3; --surface-inset: #efe1c5;
+  --text: #2c2117; --secondary: #493726; --muted: #695139; --line: #b5a080;
+  --accent: #704111; --success: #315d35; --warning: #794413; --danger: #922f26; --info: #315a70;
+  position: relative; isolation: isolate; border: 12px solid transparent;
+  border-radius: 0; background: none; box-shadow: none;
+}
+:root[data-theme="guildhall"] .board .quest-card::before {
+  content: ''; position: absolute; inset: -12px; border: 36px solid transparent;
+  border-image: url('/themes/guildhall/quest-card-main.webp') 120 fill / 36px / 0 stretch;
+  filter: drop-shadow(var(--guildhall-contact)); pointer-events: none; z-index: -1;
+}
+:root[data-theme="guildhall"] .board .quest-card::after {
+  content: ''; position: absolute; top: -5px; left: 50%; transform: translateX(-50%);
+  width: 20px; height: 20px; background: url('/themes/guildhall/brass-pin.webp') center / contain no-repeat;
+  filter: drop-shadow(0 2px 1px #20100899); pointer-events: none; z-index: 2;
+}
+:root[data-theme="guildhall"] .board .quest-card-open { padding: 14px; border-radius: 0; }
+:root[data-theme="guildhall"] .board .quest-card:hover { background: none; box-shadow: none; }
+:root[data-theme="guildhall"] .board .quest-card:focus-within { outline: 2px solid #edc780; outline-offset: 4px; }
+:root[data-theme="guildhall"] .board .quest-card-top { gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+:root[data-theme="guildhall"] .board .quest-monogram {
+  width: 34px; height: 34px; background: url('/themes/guildhall/wax-seal.webp') center / contain no-repeat;
+  color: #ffe5b5; border-radius: 0;
+}
+:root[data-theme="guildhall"] .board .quest-monogram svg { width: 15px; height: 15px; }
+:root[data-theme="guildhall"] .board .badge { white-space: normal; }
+:root[data-theme="guildhall"] .board .quest-card-footer { border-color: #a17b4940; }
+:root[data-theme="guildhall"] .board .quest-card-controls { padding: 0 14px 12px; }
+
+@media (max-width: 1099px) {
+  :root[data-theme="guildhall"] .app-shell { grid-template-columns: 200px minmax(0, 1fr); padding: 18px 24px 22px 16px; gap: 16px; }
+  :root[data-theme="guildhall"] .main { --page-padding: 20px; }
+}
+@media (max-width: 650px) {
+  .theme-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :root[data-theme="guildhall"] { --guildhall-frame-width: 7px; }
+  :root[data-theme="guildhall"] .app-shell { grid-template-columns: minmax(0, 1fr); padding: 0; gap: 6px; background: #301c10; }
+  :root[data-theme="guildhall"] .sidebar { padding: 8px; border-width: 4px; gap: 8px; }
+  :root[data-theme="guildhall"] .sidebar::before { inset: -1px; }
+  :root[data-theme="guildhall"] .brand { padding: 0; gap: 5px; flex-wrap: nowrap; }
+  :root[data-theme="guildhall"] .brand::after { display: none; }
+  :root[data-theme="guildhall"] .sidebar-bottom { border: 0; margin: 0; padding: 0; }
+  :root[data-theme="guildhall"] .nav-item { padding: 8px 6px; font-size: 14px; }
+  :root[data-theme="guildhall"] .main { padding: 10px 6px 14px; --page-padding: 14px; --page-title-size: 24px; }
+  :root[data-theme="guildhall"] .guildhall-sheet { --sheet-scale: .18; }
+  :root[data-theme="guildhall"] .board > .quest-grid { padding: 24px 16px; }
+  :root[data-theme="guildhall"] .board > .quest-grid::before { border-width: 26px; border-image-width: 26px; }
+  :root[data-theme="guildhall"] .composer { padding: 10px; }
+  :root[data-theme="guildhall"] .gm-heading { flex-wrap: wrap; gap: 10px; }
+  :root[data-theme="guildhall"] .gm-heading h1 { overflow-wrap: anywhere; }
+  :root[data-theme="guildhall"] .board > .quest-grid { gap: 20px; }
+  :root[data-theme="guildhall"] .board .quest-card-open { padding: 12px; }
+  :root[data-theme="guildhall"] .message-assistant { padding-left: 0; }
+  :root[data-theme="guildhall"] .guildhall-crest { position: static; margin-bottom: 8px; }
+}
+@media (forced-colors: active) {
+  :root[data-theme="guildhall"] .guildhall-sheet, :root[data-theme="guildhall"] .guildhall-crest { display: none; }
+  :root[data-theme="guildhall"] :is(.main, .sidebar, .quest-card, .composer, .message-user, .page-header-sticky, .quest-monogram, .app-shell, .board > .quest-grid) { background-image: none; border-image-source: none; box-shadow: none; }
+  :root[data-theme="guildhall"] :is(.main, .sidebar, .board .quest-card)::before,
+  :root[data-theme="guildhall"] .board .quest-card::after,
+  :root[data-theme="guildhall"] .board > .quest-grid::before,
+  :root[data-theme="guildhall"] :is(.button.primary, .gm-header-actions .button)::before { display: none; }
+  :root[data-theme="guildhall"] :is(.button.primary, .gm-header-actions .button) { background: ButtonFace; color: ButtonText; border: 1px solid ButtonText; text-shadow: none; }
+  :root[data-theme="guildhall"] :is(.quest-card, .composer, .main, .sidebar) { border: 1px solid CanvasText; }
+  :root[data-theme="guildhall"] .message-assistant { padding-left: 0; }
+  :root[data-theme="guildhall"] .nav-item.active { outline: 1px solid Highlight; }
+}

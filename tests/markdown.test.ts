@@ -3,8 +3,64 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import Markdown from '../src/web/Markdown.ts';
+import { copyCode, highlightCode } from '../src/web/CodeBlock.ts';
 
 const render = (text: string) => renderToStaticMarkup(createElement(Markdown, { text }));
+
+test('Markdown covers every heading level, prose, rules and literal unsupported HTML', () => {
+  const html = render('# One\n\n## Two\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six\n\nPlain **strong** *emphasis* ~~removed~~ [link](https://example.com)\n\n---\n\n<details><summary>Not interactive HTML</summary>literal</details>');
+  for (const [i, word] of ['One', 'Two', 'Three', 'Four', 'Five', 'Six'].entries()) {
+    assert.match(html, new RegExp(`<h${i + 1}>${word}</h${i + 1}>`));
+  }
+  assert.match(html, /<strong>strong<\/strong> <em>emphasis<\/em> <del>removed<\/del>/);
+  assert.match(html, /<hr\/>/);
+  assert.doesNotMatch(html, /<details|<summary/);
+  assert.match(html, /&lt;details&gt;/);
+});
+
+test('code controls label plain fences and preserve unknown languages literally', () => {
+  const plain = render('```\n<&amp;>\n```');
+  assert.match(plain, /class="code-language">text<\/span>/);
+  assert.match(plain, /aria-label="Copy text code">Copy<\/button>/);
+  assert.match(plain, /role="status" aria-live="polite" aria-atomic="true"/);
+  assert.match(plain, /<code>&lt;&amp;amp;&gt;<\/code>/);
+  const unknown = render('```mystery extra metadata\nconst value = "<script>";\n```');
+  assert.match(unknown, /class="code-language">mystery<\/span>/);
+  assert.doesNotMatch(unknown, /code-token-|<script/);
+});
+
+test('lexical highlighting is lossless for supported languages and every streaming prefix', () => {
+  const examples: Record<string, string> = {
+    js: 'const x = "<&amp;>"; // caret ^ comment\n/* partial',
+    ts: 'interface Quest { readonly id: string }\nconst n = 12.5;',
+    python: 'def run():\n  # note\n  return """partial\ntext',
+    bash: '#!/bin/sh\nif true; then echo "$HOME"; fi\n',
+    json: '{"safe": true, "n": 42, "partial": "abc',
+    diff: 'diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-old\n+new\n context\n',
+  };
+  for (const [language, text] of Object.entries(examples)) {
+    for (let length = 0; length <= text.length; length++) {
+      const partial = text.slice(0, length);
+      assert.equal(highlightCode(partial, language).map(token => token.text).join(''), partial);
+    }
+    assert.ok(highlightCode(text, language).some(token => token.kind));
+  }
+  assert.ok(highlightCode(examples.js, 'js').some(token => token.kind === 'comment' && token.text.includes('^ comment')));
+  for (const language of ['html', 'unknown', 'text', 'constructor', 'toString']) {
+    assert.deepEqual(highlightCode('<b>&amp;</b>', language), [{ text: '<b>&amp;</b>' }]);
+  }
+  const large = 'const x = 1;\n'.repeat(10_000);
+  assert.deepEqual(highlightCode(large, 'js'), [{ text: large }]);
+});
+
+test('copy code reports success, unavailable clipboard and rejected permission without altering text', async () => {
+  const text = '\tconst value = "<&amp;>";\n\n';
+  let copied: string | undefined;
+  assert.equal(await copyCode(text, { writeText: async value => { copied = value; } }), true);
+  assert.equal(copied, text);
+  assert.equal(await copyCode(text, { writeText: async () => { throw new Error('Denied'); } }), false);
+  assert.equal(await copyCode(text, undefined), false);
+});
 
 test('Markdown renders nested inline code inside emphasis without leaking delimiters', () => {
   assert.equal(render('**Two stores under `~/.guildmaster-gui` (or `GUILDMASTER_HOME`):**'),
@@ -24,7 +80,7 @@ test('Markdown preserves nested lists, multiline items, starting numbers, and ta
 test('Markdown decodes prose entities while preserving literal entities and markup in code', () => {
   assert.equal(render('A &amp; B &copy; &#x41; \\[literal\\] `&amp; <tag>`'),
     '<div class="markdown"><p>A &amp; B © A [literal] <code>&amp;amp; &lt;tag&gt;</code></p></div>');
-  assert.match(render('```html\n<div>&amp;</div>\n```'), /<pre><code>&lt;div&gt;&amp;amp;&lt;\/div&gt;<\/code><\/pre>/);
+  assert.match(render('```html\n<div>&amp;</div>\n```'), /<code>&lt;div&gt;&amp;amp;&lt;\/div&gt;<\/code><\/pre>/);
 });
 
 test('Markdown safely renders raw HTML and rejects executable link schemes', () => {
@@ -45,9 +101,11 @@ test('Markdown presents images as opt-in links without automatic remote requests
 test('Markdown renders tables, blockquotes, and partial streaming fences', () => {
   const html = render('> A **note**\n\n| Name | State |\n| :--- | ---: |\n| `Quest` | ~~pending~~ done |\n\n```ts\nconst value = "<unfinished>";');
   assert.match(html, /<blockquote><p>A <strong>note<\/strong><\/p><\/blockquote>/);
-  assert.match(html, /<th style="text-align:left">Name<\/th>/);
+  assert.match(html, /<th scope="col" style="text-align:left">Name<\/th>/);
   assert.match(html, /<td style="text-align:right"><del>pending<\/del> done<\/td>/);
-  assert.match(html, /class="code-language">ts<\/div><pre><code>const value = &quot;&lt;unfinished&gt;&quot;;<\/code><\/pre>/);
+  assert.match(html, /class="code-language">ts<\/span>/);
+  assert.match(html, /<span class="code-token-keyword">const<\/span> value = <span class="code-token-string">&quot;&lt;unfinished&gt;&quot;<\/span>;/);
+  assert.match(html, /tabindex="0" role="region" aria-label="ts code"/);
 });
 
 test('conversation links open files in the correct quest without changing web or app links', () => {

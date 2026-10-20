@@ -12,6 +12,7 @@ export default function Icon({ name, size = 20 }: { name: string; size?: number 
     palette: <><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-3.7 1.2 1.2 0 0 1 .6-2.3H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8Z"/><circle cx="7.5" cy="11" r=".7"/><circle cx="10" cy="7" r=".7"/><circle cx="15" cy="7.5" r=".7"/></>,
     panel: <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></>,
     spark: <><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></>,
+    compass: <><circle cx="12" cy="12" r="6.5" strokeWidth=".7"/><path d="M12 1v3m0 16v3M1 12h3m16 0h3M4 4l3 3m10 10 3 3M4 20l3-3M17 7l3-3" strokeWidth=".8"/><path d="m12 3 2 7 7 2-7 2-2 7-2-7-7-2 7-2z" strokeWidth=".9"/><path d="m12 3 2 7-2 2zM12 12l-2 2 2 7z" fill="currentColor" stroke="none"/></>,
     team: <><rect x="8" y="3" width="8" height="5" rx="1"/><rect x="2" y="16" width="7" height="5" rx="1"/><rect x="15" y="16" width="7" height="5" rx="1"/><path d="M12 8v4M5.5 16v-4h13v4"/></>,
     edit: <><path d="m15 4 5 5M4 20l4-1 12-12a2.8 2.8 0 0 0-4-4L4 15z"/></>,
     search: <><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></>,

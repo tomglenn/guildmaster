@@ -1,0 +1,207 @@
+/* Functional objects within the manuscript. Base layout/semantics stay shared.
+   Keep all colour/material changes scoped to the optional Guildhall theme. */
+:root[data-theme="guildhall"] ::selection { background: #c7a46488; color: #241b12; }
+:root[data-theme="guildhall"] :is(button, a, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px;
+}
+:root[data-theme="guildhall"] :is(button, input, select, textarea):disabled { cursor: not-allowed; }
+:root[data-theme="guildhall"] button:disabled { opacity: .55; filter: saturate(.5); }
+:root[data-theme="guildhall"] :is(.page-scroll, pre, .markdown-table, .model-picker-options, .folder-picker-list) {
+  scrollbar-width: thin; scrollbar-color: #a58a61 #bba67e22; overscroll-behavior: contain;
+}
+:root[data-theme="guildhall"] :is(h2, h3, legend) { font-family: var(--display); }
+:root[data-theme="guildhall"] kbd {
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--secondary);
+  border: 1px solid #a48a635c; border-bottom-width: 2px; border-radius: 2px;
+  padding: 1px 4px; background: #f9edcf88; white-space: nowrap;
+}
+
+/* Buttons: leather only for committed primary actions, ink for ordinary tools. */
+:root[data-theme="guildhall"] .button {
+  color: var(--text); background: #faf0d866; border: 1px solid #98784e88;
+  border-radius: var(--guildhall-radius); box-shadow: inset 0 1px #fff8e666;
+  font-weight: 500; text-decoration: none;
+}
+:root[data-theme="guildhall"] .button:hover:not(:disabled) { background: #e1cda599; border-color: #876238; }
+:root[data-theme="guildhall"] :is(.button.primary, .gm-header-actions .button) {
+  position: relative; isolation: isolate; border: 0; background: #30251b;
+  color: #fff0cf; padding: 10px 18px; min-height: 38px; text-shadow: 0 1px 2px #000;
+  box-shadow: none;
+}
+:root[data-theme="guildhall"] :is(.button.primary, .gm-header-actions .button)::before {
+  content: ''; position: absolute; inset: 0; border: 9px solid transparent;
+  border-image: url('/themes/guildhall/action-button.webp') 60 fill / 9px / 0 stretch;
+  pointer-events: none; z-index: -1; filter: drop-shadow(0 1px 1px #321d1344);
+}
+:root[data-theme="guildhall"] :is(.button.primary, .gm-header-actions .button):hover:not(:disabled) { background: #30251b; color: #fff9e9; }
+:root[data-theme="guildhall"] :is(.button.primary, .gm-header-actions .button):hover:not(:disabled)::before { filter: brightness(1.14); }
+:root[data-theme="guildhall"] :is(.button.danger, .button.quest-delete, .button.project-remove-repository) {
+  color: #842e28; border-color: #9a514566; background: #a6483010;
+}
+:root[data-theme="guildhall"] :is(.button.danger, .button.quest-delete, .button.project-remove-repository):hover:not(:disabled) { background: #a6483024; border-color: #842e28; }
+:root[data-theme="guildhall"] .icon-button { color: var(--secondary); border-radius: var(--guildhall-radius); }
+:root[data-theme="guildhall"] .icon-button:hover:not(:disabled) { background: #a8874c22; color: var(--accent); }
+:root[data-theme="guildhall"] .text-button { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+:root[data-theme="guildhall"] .text-button:hover:not(:disabled) { color: var(--text); }
+:root[data-theme="guildhall"] .quest-accept.is-accepted:disabled { color: var(--success); background: #315d350a; opacity: 1; filter: none; }
+
+/* Writing areas, including native date/time/password and portal folder fields. */
+:root[data-theme="guildhall"] :is(.field input, .field textarea, .field select, .request-card textarea, .folder-picker input:not([type="checkbox"])) {
+  color: var(--text); background-color: var(--guildhall-writing);
+  border: 1px solid #a38a66; border-radius: var(--guildhall-radius);
+  box-shadow: var(--guildhall-inset-shadow); caret-color: #704111;
+}
+:root[data-theme="guildhall"] :is(input, textarea)::placeholder { color: #78664e; opacity: 1; }
+:root[data-theme="guildhall"] :is(input, textarea, select):user-invalid { border-color: var(--danger); outline-color: var(--danger); }
+:root[data-theme="guildhall"] :is(input, textarea, select):disabled { opacity: .65; }
+:root[data-theme="guildhall"] :is(input, textarea)[readonly] { background-color: #e8dcc2; }
+:root[data-theme="guildhall"] :is(.field small, .field-note, .optional, .appearance-note) { color: var(--muted); line-height: 1.65; }
+:root[data-theme="guildhall"] .field-label { font-weight: 600; }
+:root[data-theme="guildhall"] select:not([multiple]) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23695139' stroke-width='1.5'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+}
+:root[data-theme="guildhall"] :is(input[type="checkbox"], input[type="radio"]) {
+  appearance: none; -webkit-appearance: none; flex-shrink: 0;
+  width: 15px; height: 15px; min-height: 0; padding: 0; vertical-align: middle;
+  border: 1px solid #92734b; border-radius: 2px; background: #f8ebce;
+  box-shadow: inset 0 1px 2px #67401e26; accent-color: #704111;
+}
+:root[data-theme="guildhall"] input[type="radio"] { border-radius: 50%; }
+:root[data-theme="guildhall"] input[type="radio"]:checked { background: radial-gradient(circle, #754b23 0 35%, #f8ebce 42%); }
+:root[data-theme="guildhall"] input[type="checkbox"]:checked {
+  background: #704111 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%23fff3d6' stroke-width='1.8'%3E%3Cpath d='m3 7 3 3 5-6'/%3E%3C/svg%3E") center / 14px no-repeat;
+}
+:root[data-theme="guildhall"] input[type="checkbox"]:indeterminate { background: #704111; box-shadow: inset 3px 5px #704111, inset -3px -5px #704111, inset 0 7px #fff3d6; }
+:root[data-theme="guildhall"] input[type="range"] { accent-color: #704111; }
+:root[data-theme="guildhall"] .header-search {
+  background: var(--guildhall-writing); border-color: #a38a66; border-radius: var(--guildhall-radius);
+  box-shadow: var(--guildhall-inset-shadow);
+}
+:root[data-theme="guildhall"] .header-search:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+:root[data-theme="guildhall"] .header-search input { background: transparent; }
+
+/* The writing tray is part of the lower page, not an ornate card inside it. */
+:root[data-theme="guildhall"] .composer {
+  background: #f8ecd2dd; border: 1px solid #a78b635c; border-top-color: #947447;
+  border-radius: 3px 3px 5px 5px; padding: 14px 12px 10px; overflow: visible;
+  box-shadow: inset 0 1px 4px #61432118, 0 1px #fff9e780;
+}
+:root[data-theme="guildhall"] .composer:focus-within { border-color: #947447; outline: 2px solid var(--accent); outline-offset: 3px; box-shadow: var(--guildhall-inset-shadow); }
+:root[data-theme="guildhall"] .composer textarea { color: var(--text); background: transparent; caret-color: var(--accent); }
+:root[data-theme="guildhall"] .composer-unavailable .composer { background: #ebdfc3; opacity: 1; }
+:root[data-theme="guildhall"] .composer-meta { border-top: 1px solid #a78b6333; padding-top: 8px; margin-top: 9px; }
+:root[data-theme="guildhall"] .composer-shortcut { font-size: 11px; line-height: 1.8; }
+:root[data-theme="guildhall"] .send-button {
+  background: #30271e; color: #f1ce8e; border: 1px solid #a77c3c; border-radius: 3px;
+  box-shadow: inset 0 1px #e6c58722, 0 1px 2px #4d301b22;
+}
+:root[data-theme="guildhall"] .send-button:hover:not(:disabled) { background: #513c27; }
+:root[data-theme="guildhall"] .stop-button { color: #f3b9a3; border-color: #a96348; }
+:root[data-theme="guildhall"] :is(.composer-image, .message-image) { border-radius: 2px; border-color: #a38a66; background: var(--guildhall-writing); box-shadow: 0 1px 3px #4e301d33; }
+:root[data-theme="guildhall"] .composer-image > .icon-button { background: #f4e6c8; color: var(--danger); }
+:root[data-theme="guildhall"] .gm-model-trigger { color: var(--secondary); border-bottom: 1px dotted #9d7b4c88; border-radius: 0; }
+
+/* Ink navigation, index rules and register hierarchy. */
+:root[data-theme="guildhall"] :is(.detail-tabs, .filter-tabs) { gap: 22px; }
+:root[data-theme="guildhall"] :is(.detail-tabs, .filter-tabs) button { font-size: 13px; }
+:root[data-theme="guildhall"] :is(.detail-tabs, .filter-tabs) button.selected { color: #704111; border-bottom-color: #704111; font-weight: 600; }
+:root[data-theme="guildhall"] :is(.detail-tabs, .filter-tabs) button:hover:not(.selected) { color: #704111; background: #b2965c0c; }
+:root[data-theme="guildhall"] .breadcrumbs { font-size: 12px; }
+:root[data-theme="guildhall"] .breadcrumbs button { text-decoration: underline; text-decoration-color: #b19a7477; text-underline-offset: 4px; }
+:root[data-theme="guildhall"] .register-path { display: block; margin: 5px 0 0 21px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+:root[data-theme="guildhall"] :is(.project-directory-card, .project-repository-card, .schedule-card-open) h2 { font-size: 18px; }
+:root[data-theme="guildhall"] .project-directory { counter-reset: register; }
+:root[data-theme="guildhall"] .project-directory-card { counter-increment: register; border-left: 2px solid #9b764426; }
+:root[data-theme="guildhall"] .project-repository-count::before { content: counter(register, decimal-leading-zero) ' / '; font-family: var(--display); color: #98784e; }
+:root[data-theme="guildhall"] .planner-next-date { display: block; color: var(--muted); font-size: 12px; margin: -2px 0 12px; letter-spacing: .015em; }
+:root[data-theme="guildhall"] .schedule-card { border-left: 2px solid #9b764426; }
+:root[data-theme="guildhall"] .schedule-card .schedule-state { padding-right: 8px; }
+:root[data-theme="guildhall"] .schedule-state.enabled { color: var(--success); }
+:root[data-theme="guildhall"] .schedule-history-description strong { font-family: var(--display); font-weight: 600; }
+
+/* Smaller paper objects: overlays share one surface. No giant illustrated
+   border crops on tiny menus. Native popover/dialog placement remains intact. */
+:root[data-theme="guildhall"] :is(.modal, .confirmation-dialog, .project-archive-dialog, .provider-dialog, .image-preview-dialog, .model-picker-popover, .board-filter-popover, .schedule-menu > div, .quest-info, .gm-history-dialog) {
+  background: var(--guildhall-overlay); color: var(--text);
+  border: 1px solid #ad9062; border-radius: var(--guildhall-radius);
+  box-shadow: var(--guildhall-overlay-shadow);
+}
+:root[data-theme="guildhall"] :is(.confirmation-dialog, .project-archive-dialog, .provider-dialog) { border-top: 3px solid #765336; }
+:root[data-theme="guildhall"] :is(.modal-header, .provider-dialog-heading, .quest-info-heading, .gm-history-heading, .model-picker-search, .image-preview-toolbar) { border-bottom: 1px solid var(--guildhall-rule); }
+:root[data-theme="guildhall"] .quest-info { border-radius: 0; border-left: 3px solid #765336; }
+:root[data-theme="guildhall"] .quest-info :is(.inspector-workspace, .session-details) { background: #e5d4af66; border-left: 1px solid #a48a6366; border-radius: 0; }
+:root[data-theme="guildhall"] :is(.folder-picker-entry, .model-picker-option, .board-filter-options button) { border-radius: 2px; }
+:root[data-theme="guildhall"] :is(.folder-picker-entry, .model-picker-option, .board-filter-options button):hover { background: #d9c29988; }
+:root[data-theme="guildhall"] .model-picker-option:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; background: #d9c29988; }
+:root[data-theme="guildhall"] .model-picker-search:focus-within { box-shadow: inset 2px 0 var(--accent); }
+:root[data-theme="guildhall"] :is(.model-picker-search input, .model-picker-note) { color: var(--secondary); }
+:root[data-theme="guildhall"] .folder-picker-footer { background: #e5d4af66; }
+:root[data-theme="guildhall"] :is(.service-tooltip, .sidebar-settings-tooltip, .schedule-timing-tooltip) {
+  border-radius: 2px; background: #30271e; color: #f3e4c4; border: 1px solid #8d7047;
+  box-shadow: 0 2px 7px #1a100955; font-size: 12px;
+}
+:root[data-theme="guildhall"] dialog::backdrop,
+:root[data-theme="guildhall"] :is(.modal-backdrop, .quest-info-scrim) { background: #1b100db3; }
+:root[data-theme="guildhall"] .latest-result-shortcut .button { background: #f4e6c8; border-radius: 3px; box-shadow: 0 2px 5px #3d281a44; }
+
+/* Quest/agent activity reads as marginal annotations and technical inserts. */
+:root[data-theme="guildhall"] .message { margin-bottom: 30px; }
+:root[data-theme="guildhall"] .message-meta { gap: 10px; }
+:root[data-theme="guildhall"] .message-meta > span { font-size: 12px; }
+:root[data-theme="guildhall"] .message-user .message-meta strong { font-variant: small-caps; letter-spacing: .03em; }
+:root[data-theme="guildhall"] :is(.conversation-tools, .delegation-row) { border-left: 1px solid #9b764466; padding-left: 12px; }
+:root[data-theme="guildhall"] :is(.conversation-tool-row, .delegation-row) { border-radius: 0; }
+:root[data-theme="guildhall"] :is(.conversation-tool-row, .delegation-row):hover:not(:disabled) { background: #ae895916; }
+:root[data-theme="guildhall"] .tool-action-label { font-family: var(--display); font-size: 14px; }
+:root[data-theme="guildhall"] .conversation-tool-output {
+  background: var(--guildhall-code-bg); color: var(--guildhall-code-ink);
+  border: 1px solid var(--guildhall-code-rule); border-radius: 2px; margin-left: 0;
+  scrollbar-color: #9a8b6c #272721;
+}
+:root[data-theme="guildhall"] .conversation-tool-output pre { color: inherit; }
+:root[data-theme="guildhall"] .conversation-tool-output ::selection { background: #78633f; color: #fff5dc; }
+:root[data-theme="guildhall"] .tool-output-meta { color: var(--guildhall-code-muted); border-bottom: 1px solid var(--guildhall-code-rule); padding-bottom: 8px; }
+:root[data-theme="guildhall"] :is(.agent-overview-row, .gm-history-list > button) {
+  background: #f9edcf66; border: 0; border-bottom: 1px solid var(--guildhall-rule); border-radius: 0; box-shadow: none;
+}
+:root[data-theme="guildhall"] :is(.agent-overview-row, .gm-history-list > button):hover { background: #ddc89c44; }
+:root[data-theme="guildhall"] .agent-overview-label strong { font-family: var(--display); font-size: 17px; }
+:root[data-theme="guildhall"] .working-message { font-family: var(--display); border-top: 1px solid #a78b6326; border-radius: 0; }
+:root[data-theme="guildhall"] .working-message .spinner { color: #8c642f; }
+:root[data-theme="guildhall"] .badge { font-size: 12px; line-height: 1.6; }
+:root[data-theme="guildhall"] .status-dot { width: 6px; height: 6px; box-shadow: inset 0 1px #fff6; }
+:root[data-theme="guildhall"] :is(.request-card, .pending-strip) { border-radius: 2px; border: 1px solid #b18a4f66; border-left: 3px solid #9b702f; background: #f3e0b780; }
+:root[data-theme="guildhall"] .request-heading { font-family: var(--display); }
+:root[data-theme="guildhall"] .quest-subline .badge { border-bottom: 1px solid currentColor; }
+
+/* Settings, connections and recovery states use the same records/annotations. */
+:root[data-theme="guildhall"] :is(.settings-section, .connection-service-card, .provider-row, .providers-empty, .oauth-progress, .connection-choice, .connection-import-choice, .appearance-preview) {
+  background: #f8edcf55; border: 0; border-top: 1px solid var(--guildhall-rule); border-radius: 2px; box-shadow: none;
+}
+:root[data-theme="guildhall"] .providers-settings .provider-row { border: 1px solid #ae956e66; background: #f8edcf66; }
+:root[data-theme="guildhall"] :is(.provider-symbol, .settings-number, .provider-avatar) { color: #805526; background: #b0915420; border-radius: 50%; }
+:root[data-theme="guildhall"] .theme-option { border-radius: 3px; background: #f9edcf88; }
+:root[data-theme="guildhall"] .theme-option.selected { border-color: #704111; box-shadow: inset 0 -2px #704111; }
+:root[data-theme="guildhall"] .theme-preview { border-radius: 2px; }
+:root[data-theme="guildhall"] .device-code code { color: var(--text); border-radius: 2px; background: var(--guildhall-writing); }
+:root[data-theme="guildhall"] :is(.inline-error, .error-card) { border: 1px solid #a25c4d55; border-left: 3px solid #922f26; border-radius: 2px; background: #f7e3cf; color: #842e28; }
+:root[data-theme="guildhall"] :is(.success-notice, .settings-saved, .project-save-status) { color: var(--success); }
+:root[data-theme="guildhall"] :is(.board-empty, .tab-empty) { min-height: 0; padding: 40px 20px; }
+:root[data-theme="guildhall"] .empty-emblem { border: 1px solid #a48a6355; border-radius: 50%; background: #b0915412; }
+:root[data-theme="guildhall"] .welcome-suggestions button { background: #f8edcf77; border-color: #aa8d6255; border-radius: 2px; }
+:root[data-theme="guildhall"] .board-footnote { font-size: 12px; padding-top: 18px; }
+
+@media (max-width: 650px) {
+  :root[data-theme="guildhall"] :is(.detail-tabs, .filter-tabs) { gap: 16px; }
+  :root[data-theme="guildhall"] .composer { padding: 10px 8px; }
+  :root[data-theme="guildhall"] .composer-shortcut kbd { font-size: 10px; padding: 1px 2px; }
+  :root[data-theme="guildhall"] .register-path { margin-left: 0; }
+  :root[data-theme="guildhall"] .conversation-tools { padding-left: 8px; }
+}
+@media (forced-colors: active) {
+  :root[data-theme="guildhall"] :is(input[type="checkbox"], input[type="radio"]) { appearance: auto; -webkit-appearance: auto; background: Canvas; box-shadow: none; }
+  :root[data-theme="guildhall"] select:not([multiple]) { appearance: auto; background-image: none; }
+  :root[data-theme="guildhall"] :is(.button, .composer, .modal, .confirmation-dialog, .provider-dialog, .model-picker-popover, .conversation-tool-output, .board-filter-popover, .request-card) { background: Canvas; color: CanvasText; border: 1px solid CanvasText; box-shadow: none; }
+  :root[data-theme="guildhall"] :is(.button.primary, .gm-header-actions .button)::before { display: none; }
+  :root[data-theme="guildhall"] :is(.icon-button, .button, .model-picker-option):focus-visible { outline-color: Highlight; }
+}

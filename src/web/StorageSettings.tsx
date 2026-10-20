@@ -30,6 +30,6 @@ export default function StorageSettings({onChanged}:{onChanged:()=>Promise<void>
       {view.retentionDays!==null&&view.lastError&&<div className="inline-error" role="status">{view.lastError}</div>}
       {view.lastCleanupAt&&<p className="storage-last-cleanup">Last cleanup: {new Date(view.lastCleanupAt).toLocaleString()}{view.lastDeleted?` · ${view.lastDeleted} deleted`:''}</p>}
     </>}
-    {confirm&&<ConfirmDialog title="Enable permanent deletion?" description={`Archived quests will be permanently deleted ${retention} days after archiving. Quests already older than this will start being deleted in the background now. This includes agent conversations and Guildmaster-owned workspaces. Source repositories and published work are kept. This cannot be undone.`} confirmLabel="Enable automatic deletion" cancelLabel="Keep current setting" onClose={()=>setConfirm(false)} onConfirm={()=>void save()}/>}
+    {confirm&&<ConfirmDialog intent="danger" title="Enable permanent deletion?" description={`Archived quests will be permanently deleted ${retention} days after archiving. Quests already older than this will start being deleted in the background now. This includes agent conversations and Guildmaster-owned workspaces. Source repositories and published work are kept. This cannot be undone.`} confirmLabel="Enable automatic deletion" cancelLabel="Keep current setting" onClose={()=>setConfirm(false)} onConfirm={()=>void save()}/>}
   </section>;
 }
