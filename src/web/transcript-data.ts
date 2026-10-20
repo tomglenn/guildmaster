@@ -66,11 +66,6 @@ export function latestResultMessage(messages: TranscriptMessage[], result?: stri
   return messages.findLast(message => message.role === 'assistant' && message.source !== 'system' && message.text === result);
 }
 
-/** Compact navigation shows the overall quest lifecycle, not scheduler internals. */
-export function sidebarStatus(status: string): string {
-  return ['queued','running','waiting'].includes(status) ? 'running' : status;
-}
-
 export type Delegation = { id: string; agentId?: string; questLink?: boolean; followup?: boolean; title: string; status: string; createdAt: string | number };
 export type ConversationEntry =
   | { kind: 'message'; id: string; message: TranscriptMessage }

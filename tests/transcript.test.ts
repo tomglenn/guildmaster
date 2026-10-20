@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sidebarStatus, transcriptItems, latestResultMessage, visibleLive, conversationProgress, visibleActivity, type ToolCall } from '../src/web/transcript-data.ts';
+import { transcriptItems, latestResultMessage, visibleLive, conversationProgress, visibleActivity, type ToolCall } from '../src/web/transcript-data.ts';
 
 test('streaming is deduplicated by message identity, not by text prefixes, and fenced to active runs', () => {
   const messages = [{ id: 'saved', role: 'assistant' as const, text: 'Same wording', createdAt: 1 }];
@@ -101,9 +101,7 @@ test('result navigation targets the saved outcome instead of subsequent follow-u
   assert.equal(latestResultMessage(messages, 'Missing result'), undefined);
 });
 
-test('sidebar combines active scheduler states while the conversation explains queues', () => {
-  for (const status of ['queued','running','waiting']) assert.equal(sidebarStatus(status),'running');
-  for (const status of ['awaiting_input','awaiting_review','failed','interrupted','accepted','cancelled']) assert.equal(sidebarStatus(status),status);
+test('conversation explains why a quest is queued', () => {
   assert.equal(conversationProgress('queued',[],[],undefined,'Waiting for workspace'),'Waiting for workspace…');
   assert.equal(conversationProgress('queued',[],[],undefined,'Waiting for an available worker'),'Waiting for an available worker…');
 });
