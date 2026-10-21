@@ -52,6 +52,7 @@ export class QuestService extends EventEmitter {
   constructor(options: { store: Store; dataDir: string; defaultWorkspace?: string; workerPath?: string; maxWorkers?: number; connections?: ConnectionManager }) {
     super(); this.connections=options.connections; this.store = options.store; this.dataDir = options.dataDir;
     this.inlineReads = new InlineReads(this.store);
+    this.inlineReads.onExhausted=this.inlineExhausted;
     this.defaultWorkspace = directory(options.defaultWorkspace ?? process.cwd());
     this.workerPath = options.workerPath ?? workerDefault;
     this.maxWorkers = options.maxWorkers ?? Number(process.env.GUILDMASTER_MAX_WORKERS ?? 13);
@@ -704,11 +705,18 @@ export class QuestService extends EventEmitter {
       id: quest.id, title: quest.title.slice(0,160), status: quest.status, archivedAt: quest.archivedAt, projectName: quest.project?.name,
     })) };
   }
+  private inlineExhausted = (id:string,runId:string,reason:string) => {
+    const q=this.store.get(id);if(q?.activeRunId!==runId)return;
+    const live=this.live.get(id);
+    if(live?.runId===runId&&live.child.connected)live.child.send({type:'inline_exhausted',reason},()=>{});
+    this.store.event(id,'inline_budget',`Inline tools exhausted (${reason}). Return partial coverage without further tools.`);
+  };
   launch(q: Quest, prompt: string) {
     const runId = q.activeRunId!;
     const token = randomUUID();
     const connectionToken=randomUUID();
     const connectionGrants=this.store.getRun(runId)?.data.connectionGrants ?? [];
+    this.inlineReads.onExhausted=this.inlineExhausted;
     const inline=this.inlineReads.attach(q,runId);
     this.connectionTokens.set(connectionToken,{questId:q.id,runId,grants:connectionGrants,controller:new AbortController()});
     try {
@@ -736,6 +744,8 @@ export class QuestService extends EventEmitter {
       });
       let finish!: () => void; const done = new Promise<void>(resolve => { finish = resolve; });
       const live: Live = { child, runId, startedAt: Date.now(), done }; this.live.set(q.id, live);
+      // A system resume inherits the original human request's exhausted budget.
+      if(q.kind==='guildmaster')try {this.inlineReads.toolBudget(q.id);} catch { /* callback moves worker to final-answer-only */ }
       let stderr = ''; child.stdout?.on('data', () => {});
       child.stderr?.on('data', data => { stderr = (stderr + String(data)).slice(-6000); });
       child.on('message', message => { try { this.workerEvent(q.id, runId, message); } catch (error) { this.fail(q.id,runId,`Invalid worker event: ${error}`); this.stopWorker(q.id); } });
@@ -759,12 +769,14 @@ export class QuestService extends EventEmitter {
     if (!raw || typeof raw !== 'object') return;
     const m = raw as Record<string, any>; const q = this.get(id);
     if (q.activeRunId !== runId || !['running','awaiting_input'].includes(q.status)) return;
-    if (m.type === 'inline_round') {
-      if(q.kind==='guildmaster'&&!this.inlineReads.round(id,runId,m.roundId)&&this.inlineReads.hasRead(id)) {
-        // Stop source authority, not the executor: it must still report partial coverage.
-        this.inlineReads.revoke(id,runId);
-        this.store.event(id,'inline_budget','Four tool-using model rounds exhausted. Inline reads stopped.');
-      }
+    if (m.type === 'ready' && q.kind==='guildmaster') {
+      // Re-send after worker initialization: an already-exhausted system resume
+      // must not depend on receiving an IPC command during process bootstrap.
+      try {this.inlineReads.toolBudget(id);} catch {this.inlineExhausted(id,runId,'budget_exhausted');}
+    } else if (m.type === 'inline_round') {
+      if(q.kind==='guildmaster')this.inlineReads.round(id,runId,m.roundId);
+    } else if (m.type === 'inline_round_end') {
+      if(q.kind==='guildmaster')this.inlineReads.roundEnd(id,runId,m.roundId);
     } else if (m.type === 'delivered') {
       const allowed = new Set(this.store.getRun(runId)?.data.deliveryIds ?? []);
       if (!Array.isArray(m.ids) || m.ids.some((deliveryId: unknown) => typeof deliveryId !== 'string' || !allowed.has(deliveryId))) throw new AppError('Invalid delivery acknowledgment.');
@@ -802,16 +814,18 @@ export class QuestService extends EventEmitter {
       const previous = this.store.toolCalls(id).find(call => call.id === callId);
       const tool = text(m.tool, 'Tool name', 200);
       if (m.type === 'tool_start') {
+        if(q.kind==='guildmaster')try {this.inlineReads.toolBudget(id);} catch {return;}
         if (!previous) this.store.saveToolCall({ id: callId, questId: id, runId, tool, detail: String(m.detail ?? '').slice(0,4000), status: 'running', startedAt: Date.now() });
       } else {
         this.store.saveToolCall({ id: callId, questId: id, runId, tool, detail: previous?.detail ?? '', startedAt: previous?.startedAt ?? Date.now(),
-          status: m.isError ? 'failed' : 'completed', endedAt: Date.now(), output: String(m.output ?? '').slice(0,20000) });
+          status: m.isError ? 'failed' : 'completed', endedAt: Date.now(), output: String(m.output ?? '').slice(0,['read_github_issue','read_github_comments','read_github_pull_metadata','read_repository','search_repository'].includes(tool)?110*1024:20000) });
       }
       // Deliver each persisted transition directly; snapshots remain the reconnect fallback.
       this.emit('tool', { questId: id, call: this.store.toolCalls(id).find(call => call.id === callId) });
     } else if (m.type === 'activity') {
       this.store.event(id, String(m.tool ?? 'activity'), String(m.detail ?? '').slice(0, 4000));
     } else if (m.type === 'question') {
+      if(q.kind==='guildmaster')try {this.inlineReads.toolBudget(id);} catch {return;}
       const toolCallId = text(m.id, 'Request ID', 200);
       const requestId = `${runId}:${toolCallId}`;
       if (this.store.getRequest(requestId)) return;

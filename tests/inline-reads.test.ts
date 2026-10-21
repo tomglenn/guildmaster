@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,7 +14,7 @@ function fixture(t:any,readGitHub: (...args:any[])=>Promise<unknown> = async()=>
   const q={id:'main',kind:'guildmaster',status:'running',activeRunId:'run-1',createdAt:0,updatedAt:0} as Quest;
   store.save(q);const message=store.message(q.id,'user','Summarize https://github.com/example/repo/issues/42');
   const adapters={readGitHub,readRepository:async()=>({})};
-  const broker=new InlineReads(store,adapters,now);broker.bind(q.activeRunId!,message.id);
+  const broker=new InlineReads(store,adapters,now);t.after(()=>broker.revoke(q.id));broker.bind(q.activeRunId!,message.id);
   const spec=broker.attach(q,q.activeRunId!)!;
   const input={kind:'github',operation:'comments',host:'github.com',owner:'example',repository:'repo',number:42,roundId:'one'};
   return {store,q,broker,spec,input,adapters,message};
@@ -68,9 +68,8 @@ test('pages, rounds, deadline and disconnect have independent hard boundaries',a
   assert.match(JSON.stringify(await f.broker.read(f.spec.inlineToken,{...f.input,page:4})),/page_budget/);
   assert.equal((await f.broker.read(f.spec.inlineToken,f.input)).ok,true);
   clock+=60000;assert.match(JSON.stringify(await f.broker.read(f.spec.inlineToken,f.input)),/deadline/);
-  for(const round of ['two','three','four'])assert.equal(f.broker.round(f.q.id,'run-1',round),true);
-  assert.equal(f.broker.round(f.q.id,'run-1','five'),false);
-  assert.match(JSON.stringify(await f.broker.read(f.spec.inlineToken,f.input)),/round_budget/);
+  assert.throws(()=>f.broker.toolBudget(f.q.id),/budget exhausted/);
+  assert.equal(f.broker.round(f.q.id,'run-1','two'),false);
 });
 
 test('stale active run, user cancel and disconnected caller never expose results',async t=>{
@@ -101,6 +100,93 @@ test('registered repository grants pin immutable commit and never accept model-s
   const input={kind:'repository',operation:'search',query:'retry',...grant,roundId:'first'};
   assert.equal((await f.broker.read(spec.inlineToken,input)).ok,true);
   for(const patch of [{repositoryId:'another'},{commit:'HEAD'},{kind:'github'}])assert.equal((await f.broker.read(spec.inlineToken,{...input,...patch})).ok,false);
+});
+
+test('fourth round completes before exhaustion, which survives broker recreation',async t=>{
+  const f=fixture(t);const notices:string[]=[];f.broker.onExhausted=(_q,_r,reason)=>notices.push(reason);
+  await f.broker.read(f.spec.inlineToken,f.input);
+  f.broker.roundEnd(f.q.id,'run-1','one');
+  for(const round of ['two','three','four']) {
+    assert.equal(f.broker.round(f.q.id,'run-1',round),true);
+    assert.doesNotThrow(()=>f.broker.toolBudget(f.q.id));
+    f.broker.roundEnd(f.q.id,'run-1',round);
+  }
+  assert.deepEqual(notices,['round_budget']);
+  assert.throws(()=>f.broker.toolBudget(f.q.id),/budget exhausted/);
+  assert.equal(f.broker.round(f.q.id,'run-1','five'),false);
+  const recreated=new InlineReads(f.store,f.adapters);assert.throws(()=>recreated.toolBudget(f.q.id),/budget exhausted/);
+});
+
+test('absolute sixty second timer exhausts idle workers without another request',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  const f=fixture(t);const notices:string[]=[];f.broker.onExhausted=(_q,_r,reason)=>notices.push(reason);
+  assert.equal((await f.broker.read(f.spec.inlineToken,f.input)).ok,true);
+  t.mock.timers.tick(59999);assert.deepEqual(notices,[]);
+  t.mock.timers.tick(1);assert.deepEqual(notices,['deadline']);
+  assert.throws(()=>f.broker.toolBudget(f.q.id),/budget exhausted/);
+});
+
+test('eighth call exhausts all tools but retains its full receipt',async t=>{
+  const f=fixture(t);const notices:string[]=[];f.broker.onExhausted=(_q,_r,reason)=>notices.push(reason);
+  for(let i=0;i<8;i++)assert.equal((await f.broker.read(f.spec.inlineToken,f.input)).ok,true);
+  assert.deepEqual(notices,['source_budget']);
+  assert.throws(()=>f.broker.toolBudget(f.q.id),/budget exhausted/);
+});
+
+test('exact byte ceiling preserves the final bounded source receipt and then exhausts tools',async t=>{
+  const f=fixture(t,async()=>({text:'x'.repeat(100*1024-11)}));
+  const notices:string[]=[];f.broker.onExhausted=(_q,_r,reason)=>notices.push(reason);
+  const receipt=await f.broker.read(f.spec.inlineToken,f.input);
+  assert.equal(receipt.ok,true);assert.ok(JSON.stringify(receipt).length>100*1024);
+  assert.deepEqual(notices,['byte_budget']);assert.throws(()=>f.broker.toolBudget(f.q.id),/budget exhausted/);
+});
+
+test('deadline timers are cleaned up on revoke and resumes keep the original first-read instant',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});let clock=100;
+  const f=fixture(t,async()=>({text:'source'}),()=>clock);const notices:string[]=[];
+  f.broker.onExhausted=(_q,_r,reason)=>notices.push(reason);
+  await f.broker.read(f.spec.inlineToken,f.input);
+  f.broker.revoke(f.q.id);clock+=45000;t.mock.timers.tick(45000);assert.equal(notices.length,0);
+  f.q.activeRunId='run-2';f.store.save(f.q);
+  const resumed=new InlineReads(f.store,f.adapters,()=>clock);resumed.bind('run-2',f.message.id);
+  resumed.onExhausted=(_q,_r,reason)=>notices.push(reason);resumed.attach(f.q,'run-2');t.after(()=>resumed.revoke(f.q.id));
+  t.mock.timers.tick(14999);assert.deepEqual(notices,[]);
+  t.mock.timers.tick(1);assert.deepEqual(notices,['deadline']);
+  assert.throws(()=>resumed.toolBudget(f.q.id),/budget exhausted/);
+});
+
+test('GitHub account is durably pinned before source GET, including concurrent and resumed reads',async t=>{
+  let account='Alice';let fetched=0;
+  const f=fixture(t,async(_input,_signal,options)=>{
+    await Promise.resolve(); // both requests may resolve /user concurrently
+    const resolved=account;account='Mallory';
+    options.authorizeAccount(resolved);fetched++;return {text:'source'};
+  });
+  const results=await Promise.all([f.broker.read(f.spec.inlineToken,f.input),f.broker.read(f.spec.inlineToken,f.input)]);
+  assert.equal(results.filter(r=>r.ok).length,1);assert.equal(fetched,1);
+  assert.match(JSON.stringify(results),/account changed/);
+  const recreated=new InlineReads(f.store,f.adapters);const spec=recreated.attach(f.q,'run-1')!;t.after(()=>recreated.revoke(f.q.id));
+  assert.match(JSON.stringify(await recreated.read(spec.inlineToken,f.input)),/account changed/);assert.equal(fetched,1);
+  account='ALICE';assert.equal((await recreated.read(spec.inlineToken,f.input)).ok,true);assert.equal(fetched,2);
+});
+
+test('production adapter receives account authorization before source GET',async t=>{
+  const f=fixture(t);const bin=mkdtempSync(join(tmpdir(),'gm-inline-gh-bin-'));
+  writeFileSync(join(bin,'gh'),'#!/bin/sh\nprintf "test-credential"\n',{mode:0o700});
+  const oldPath=process.env.PATH;process.env.PATH=`${bin}:${oldPath}`;
+  t.after(()=>{process.env.PATH=oldPath;rmSync(bin,{recursive:true,force:true});});
+  let account='Alice';let sources=0;
+  t.mock.method(globalThis,'fetch',async(url:any)=>{
+    if(String(url)==='https://api.github.com/user')return Response.json({login:account});
+    sources++;return Response.json({number:42,title:'Issue',body:'Source',comments:0});
+  });
+  const production=new InlineReads(f.store);production.bind('run-1',f.message.id);
+  const spec=production.attach(f.q,'run-1')!;t.after(()=>production.revoke(f.q.id));
+  assert.equal((await production.read(spec.inlineToken,{...f.input,operation:'issue'})).ok,true);
+  assert.equal(sources,1);
+  account='Mallory';
+  assert.equal((await production.read(spec.inlineToken,{...f.input,operation:'issue'})).ok,false);
+  assert.equal(sources,1,'switched account must be rejected before fetching source');
 });
 
 test('ambiguous direct request grants nothing even if source text suggests another target',async t=>{

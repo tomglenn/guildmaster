@@ -5,21 +5,22 @@ import type { Quest } from '../domain/types.ts';
 import { AppError } from '../domain/types.ts';
 type GitHubInput = {operation:'issue'|'comments'|'pull';host:string;owner:string;repository:string;number:number;page?:number};
 type RepositoryInput = {operation:'read'|'search';commit:string;path?:string;startLine?:number;endLine?:number;query?:string};
-type Adapters = {readGitHub:(input:GitHubInput,signal:AbortSignal)=>Promise<unknown>;readRepository:(sourcePath:string,input:RepositoryInput,signal:AbortSignal)=>Promise<unknown>};
+type Adapters = {readGitHub:(input:GitHubInput,signal:AbortSignal,options?:{authorizeAccount:(account:string)=>void})=>Promise<unknown>;readRepository:(sourcePath:string,input:RepositoryInput,signal:AbortSignal)=>Promise<unknown>};
 const defaultAdapters:Adapters = {
-  readGitHub:async(input,signal)=>(await import('./inline-github.ts')).readGitHub(input,signal),
+  readGitHub:async(input,signal,options)=>(await import('./inline-github.ts')).readGitHub(input,signal,options),
   readRepository:async(path,input,signal)=>(await import('./inline-repository.ts')).readRepository(path,input,signal),
 };
 
 export type InlineGrant = { kind:'github'; host:string; owner:string; repository:string; number?:number } | { kind:'repository'; repositoryId:string; commit:string; sourcePath:string };
-type Usage = { grant?:InlineGrant; calls:number; bytes:number; firstRead?:number; rounds:string[]; pages:Record<string,number[]> };
-type Run = { questId:string; runId:string; origin:string; controller:AbortController; concurrent:number };
+type Usage = { grant?:InlineGrant; calls:number; bytes:number; firstRead?:number; rounds:string[]; pages:Record<string,number[]>; account?:string; exhausted?:string };
+type Run = { questId:string; runId:string; origin:string; controller:AbortController; concurrent:number; deadlineTimer?:ReturnType<typeof setTimeout>; notified?:boolean };
 const failure = (code:string, message:string) => ({ok:false,partial:true,untrusted:true,error:{code,message}});
 
 /** Service-owned, durable per-human-message authority; never derived from retrieved source text. */
 export class InlineReads {
   tokens = new Map<string,Run>();
   private store:Store; private adapters:Adapters; private now:()=>number;
+  onExhausted?: (questId:string,runId:string,reason:string)=>void;
   constructor(store:Store, adapters:Adapters = defaultAdapters, now = Date.now) {this.store=store;this.adapters=adapters;this.now=now;}
   private usage(origin:string) { return this.store.setting<Usage>(`inline:usage:${origin}`); }
   private save(origin:string,usage:Usage) { this.store.saveSetting(`inline:usage:${origin}`,usage); }
@@ -47,7 +48,8 @@ export class InlineReads {
     if(!origin)return;
     let usage=this.usage(origin.id);
     if(!usage) {usage={grant:this.resolve(q,origin.displayText??origin.text),calls:0,bytes:0,rounds:[],pages:{}};this.save(origin.id,usage);}
-    const token=randomUUID();this.tokens.set(token,{questId:q.id,runId,origin:origin.id,controller:new AbortController(),concurrent:0});
+    const token=randomUUID();const run:Run={questId:q.id,runId,origin:origin.id,controller:new AbortController(),concurrent:0};this.tokens.set(token,run);
+    if(usage.firstRead!==undefined&&!usage.exhausted)this.armDeadline(run,usage.firstRead);
     const grant=usage.grant;
     return {inlineToken:token,inlineGrant:grant?.kind==='github'?{github:{host:grant.host,owner:grant.owner,repository:grant.repository,...(grant.number?{number:grant.number}:{})}}:grant?{repository:{repositoryId:grant.repositoryId,commit:grant.commit}}:undefined};
   }
@@ -55,29 +57,66 @@ export class InlineReads {
     const q=this.store.get(run.questId);
     if(run.controller.signal.aborted||q?.activeRunId!==run.runId||!['running','awaiting_input'].includes(q.status))throw new AppError('This run no longer has inline read access.',403);
   }
-  revoke(questId:string,runId?:string) {for(const [token,run] of this.tokens)if(run.questId===questId&&(!runId||run.runId===runId)){run.controller.abort();this.tokens.delete(token);}}
+  revoke(questId:string,runId?:string) {for(const [token,run] of this.tokens)if(run.questId===questId&&(!runId||run.runId===runId)){clearTimeout(run.deadlineTimer);run.controller.abort();this.tokens.delete(token);}}
   hasRead(questId:string) {
     const q=this.store.get(questId);const bound=q?.activeRunId&&this.origin(q.activeRunId);
     const origin=bound ?? [...this.store.messages(questId)].reverse().find(m=>m.role==='user'&&m.source==='user')?.id;
     return !!origin&&!!this.usage(origin)?.calls;
   }
+  private exhaust(run:Run,reason:string) {
+    const usage=this.usage(run.origin)!;
+    usage.exhausted??=reason;this.save(run.origin,usage);
+    clearTimeout(run.deadlineTimer);run.deadlineTimer=undefined;
+    if(!run.notified) {run.notified=true;this.onExhausted?.(run.questId,run.runId,usage.exhausted);}
+    return usage.exhausted;
+  }
+  private armDeadline(run:Run,firstRead:number) {
+    if(run.deadlineTimer)return;
+    run.deadlineTimer=setTimeout(()=>{
+      run.deadlineTimer=undefined;
+      if(this.store.get(run.questId)?.activeRunId===run.runId&&!run.controller.signal.aborted)this.exhaust(run,'deadline');
+    },Math.max(0,60000-(this.now()-firstRead)));
+    run.deadlineTimer.unref?.();
+  }
+  private exhausted(run:Run) {
+    const usage=this.usage(run.origin)!;
+    if(usage.exhausted)return this.exhaust(run,usage.exhausted);
+    if(usage.firstRead===undefined)return;
+    if(this.now()-usage.firstRead>=60000)return this.exhaust(run,'deadline');
+    if(usage.calls>=8)return this.exhaust(run,'source_budget');
+    if(usage.bytes>=100*1024)return this.exhaust(run,'byte_budget');
+    if(usage.rounds.length>4)return this.exhaust(run,'round_budget');
+  }
   toolBudget(questId:string) {
-    const q=this.store.get(questId);const origin=q?.activeRunId&&this.origin(q.activeRunId);const usage=origin?this.usage(origin):undefined;
-    if(usage?.firstRead!==undefined&&(usage.rounds.length>4||this.now()-usage.firstRead>=60000))throw new AppError('Inline tool budget exhausted. Return partial coverage without further source calls.',403);
+    const q=this.store.get(questId);
+    const run=[...this.tokens.values()].find(r=>r.questId===questId&&r.runId===q?.activeRunId);
+    if(run&&this.exhausted(run))throw new AppError('Inline tool budget exhausted. Return partial coverage without further tools.',403);
+    // The fence survives revocation and service/broker recreation as well.
+    const origin=q?.activeRunId&&this.origin(q.activeRunId);const usage=origin?this.usage(origin):undefined;
+    if(usage?.exhausted||(usage?.firstRead!==undefined&&(usage.calls>=8||usage.bytes>=100*1024||usage.rounds.length>4||this.now()-usage.firstRead>=60000)))throw new AppError('Inline tool budget exhausted. Return partial coverage without further tools.',403);
+  }
+  roundEnd(questId:string,runId:string,roundId:string) {
+    const run=[...this.tokens.values()].find(r=>r.questId===questId&&r.runId===runId);if(!run)return;
+    this.active(run);const usage=this.usage(run.origin)!;
+    if(usage.firstRead!==undefined&&usage.rounds.length>=4&&usage.rounds.includes(`${runId}:${roundId}`))this.exhaust(run,'round_budget');
+    else this.exhausted(run);
   }
   round(questId:string,runId:string,roundId:string) {
     const run=[...this.tokens.values()].find(r=>r.questId===questId&&r.runId===runId);if(!run)return false;
     this.active(run);const usage=this.usage(run.origin)!;
     if(typeof roundId!=='string'||!roundId||roundId.length>200)return false;
+    if(usage.exhausted)return false;
     if(usage.rounds.length>4)return false;
     const key=`${runId}:${roundId}`;
     if(!usage.rounds.includes(key)) {usage.rounds.push(key);this.save(run.origin,usage);}
+    if(usage.rounds.length>4&&usage.firstRead!==undefined)this.exhaust(run,'round_budget');
     return usage.rounds.length<=4;
   }
   async read(token:string,input:Record<string,any>,disconnect?:AbortSignal) {
     const run=this.tokens.get(token);if(!run)throw new AppError('Inline reads are only available to the active Guildmaster run.',403);
     this.active(run);
     const usage=this.usage(run.origin)!;const grant=usage.grant;
+    const exhausted=this.exhausted(run);if(exhausted)return failure(exhausted,'Inline tool budget exhausted. Return an honest partial answer without further tools.');
     if(!grant)return failure('scope_required','Ask the user for one exact GitHub URL or one registered repository.');
     if(input.kind!==grant.kind)return failure('scope_denied','This source is outside the direct user request.');
     if(grant.kind==='github') {
@@ -94,13 +133,21 @@ export class InlineReads {
     const collection=`${input.kind}:${input.operation}:${input.number??''}`;
     const pages=current.pages[collection]??[];
     if(!pages.includes(page)&&pages.length>=3)return failure('page_budget','Three pages per collection exhausted.');
-    current.pages[collection]=[...new Set([...pages,page])];current.calls++;current.firstRead??=this.now();this.save(run.origin,current);run.concurrent++;
+    current.pages[collection]=[...new Set([...pages,page])];current.calls++;current.firstRead??=this.now();this.save(run.origin,current);this.armDeadline(run,current.firstRead);run.concurrent++;
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),Math.min(15000,Math.max(1,60000-(this.now()-current.firstRead))));
     const signal=AbortSignal.any([run.controller.signal,controller.signal,...(disconnect?[disconnect]:[])]);
     try {
       // The race fences adapters which ignore cancellation; late results never enter receipts.
       const operation=grant.kind==='github'
-        ? this.adapters.readGitHub({operation:input.operation,host:grant.host,owner:grant.owner,repository:grant.repository,number:input.number,page},signal)
+        ? this.adapters.readGitHub({operation:input.operation,host:grant.host,owner:grant.owner,repository:grant.repository,number:input.number,page},signal,{authorizeAccount:(account)=>{
+          this.active(run);if(signal.aborted)throw new Error('Read cancelled or timed out.');
+          // This synchronous durable compare-and-pin happens after /user and before
+          // any source GET, including across concurrent adapter invocations.
+          const latest=this.usage(run.origin)!;const normalized=account.toLowerCase();
+          if(!normalized||normalized.length>200)throw new Error('Invalid GitHub account identity.');
+          if(latest.account&&latest.account!==normalized)throw new Error('GitHub account changed during this request. Start a new direct request.');
+          latest.account=normalized;this.save(run.origin,latest);
+        }})
         : this.adapters.readRepository(grant.sourcePath,{operation:input.operation,commit:grant.commit,path:input.path,startLine:input.startLine,endLine:input.endLine,query:input.query},signal);
       let abort!:()=>void;
       const cancelled=new Promise<never>((_,reject)=>{abort=()=>reject(new Error('Read cancelled or timed out.'));if(signal.aborted)abort();else signal.addEventListener('abort',abort,{once:true});});
@@ -112,6 +159,6 @@ export class InlineReads {
       latest.bytes+=size;this.save(run.origin,latest);
       return {ok:true,untrusted:true,source:grant.kind==='github'?grant:{kind:grant.kind,repositoryId:grant.repositoryId,commit:grant.commit},result,budget:{calls:latest.calls,bytes:latest.bytes,maxCalls:8,maxBytes:100*1024}};
     } catch(error) {this.active(run);return failure(signal.aborted?'cancelled':'source_error',error instanceof Error?error.message.slice(0,1000):'Source could not be read.');}
-    finally {clearTimeout(timer);run.concurrent--;}
+    finally {clearTimeout(timer);run.concurrent--;if(!run.controller.signal.aborted)this.exhausted(run);}
   }
 }

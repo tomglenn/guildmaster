@@ -88,6 +88,10 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         if (!allowed.has(req.headers.origin)) throw new AppError('This origin cannot access Guildmaster.', 403);
       }
       const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`); const path = url.pathname;
+      // Exhaustion fences all ordinary main routes, including public/GET routes.
+      // Worker completion is IPC and deliberately retains its authority.
+      const mainId=service.gmTokens.get(req.headers.authorization?.replace(/^Bearer /,'') ?? '');
+      if(mainId)service.inlineReads.toolBudget(mainId);
       if(req.method==='GET'&&path==='/oauth/slack/callback') {
         const ok=await connections.callback(url.searchParams.get('state'),url.searchParams.get('code'),url.searchParams.has('error'));
         broadcast('change',{connection:true});
@@ -106,13 +110,13 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         const supplied=req.headers.authorization?.replace(/^Bearer /,'') ?? '';
         const run=service.connectionTokens.get(supplied);
         const active=()=>{const quest=run&&store.get(run.questId);if(!run||run.controller.signal.aborted||quest?.activeRunId!==run.runId||!['running','awaiting_input'].includes(quest.status))throw new AppError('This agent run no longer has connection access.',403);};
-        active();
+        active();service.inlineReads.toolBudget(run!.questId);
         if(req.method==='GET'&&path==='/api/agent/connections') {json(res,200,{connections:connections.statuses(),availableTools:run!.grants.flatMap(g=>g.tools.map(t=>t.name))});return;}
         if(req.method!=='POST'||!path.endsWith('/call'))throw new AppError('Method not allowed.',405);
         const input=await body(req);service.inlineReads.toolBudget(run!.questId);const grant=run!.grants.find(g=>g.connectionId===input.connectionId);
         if(!grant)throw new AppError('This connection is not available to this run.',403);
         const controller=new AbortController();const onClose=()=>{if(!res.writableEnded)controller.abort();};res.on('close',onClose);
-        try {const result=await connections.call(grant,input.tool,input.arguments,AbortSignal.any([run!.controller.signal,controller.signal]));active();json(res,200,result);}finally{res.off('close',onClose);}return;
+        try {const result=await connections.call(grant,input.tool,input.arguments,AbortSignal.any([run!.controller.signal,controller.signal]));active();service.inlineReads.toolBudget(run!.questId);json(res,200,result);}finally{res.off('close',onClose);}return;
       }
       if (req.method === 'GET' && path === '/api/health') { json(res, 200, {ok:true,version:'0.1.0',dataDir,capabilities:{isolatedQuests:true,followupQuests:true,schedules:true}}); return; }
       if (req.method === 'GET' && path === '/api/bootstrap') {
