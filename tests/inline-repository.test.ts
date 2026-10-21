@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, access, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readRepository, type RepositoryReadInput } from '../src/service/inline-repository.ts';
@@ -50,6 +50,28 @@ function assertDelegated(result: any, revision: string, paths: string[]) {
  assert.equal(result.matches, undefined);
  assert.deepEqual(result.coverage.reasons, ['repository_guidance_requires_quest']);
 }
+
+test('inherited parent instructions gate reads and searches without exposing ancestor contents', async t => {
+ const f = await fixture(t);
+ const parent = await mkdtemp(join(tmpdir(), 'inline-parent-guidance-'));
+ t.after(() => rm(parent, { recursive: true, force: true }));
+ const nested = join(parent, 'repository');
+ await rename(f.dir, nested);
+ await writeFile(join(parent, 'AGENTS.md'), 'Private ancestor guidance: delegate this workflow');
+ for (const operation of ['read', 'search'] as const) {
+  const result = await readRepository(nested, { operation, commit: f.commit, path: 'src/file.ts', ...(operation === 'search' ? {query:'needle'} : {}) }, new AbortController().signal) as any;
+  assert.equal(result.requiresQuest, true);
+  assert.equal(result.revision, f.commit);
+  assert.equal(result.coverage.filesScanned, 0);
+  assert.deepEqual(result.coverage.reasons, ['inherited_repository_guidance_requires_quest']);
+  assert.deepEqual(result.instructionPaths, []);
+  assert.ok(!JSON.stringify(result).includes('Private ancestor'));
+ }
+ await rm(join(parent, 'AGENTS.md'));
+ await symlink('missing-guidance', join(parent, 'CLAUDE.md'));
+ const result = await readRepository(nested, {operation:'read',commit:f.commit,path:'src/file.ts'}, new AbortController().signal) as any;
+ assert.equal(result.requiresQuest, true);
+});
 
 test('committed root instructions gate read/search without reading or executing their directives', async t => {
  const f = await fixture(t);

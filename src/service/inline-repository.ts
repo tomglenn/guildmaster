@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { isAbsolute } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { lstat } from 'node:fs/promises';
 
 export interface RepositoryReadInput {
  operation: 'read' | 'search';
@@ -110,6 +111,27 @@ export async function readRepository(sourcePath: string, input: RepositoryReadIn
    coverage: { filesScanned: 0, bytesScanned: 0, complete: false,
     scope: input.path ?? '', exclusionsApplied: true, reasons: [reason] } };
  };
+ // Delegated guidance also inherits instructions above the registered source
+ // directory. Only inspect presence at fixed conventional names: never read or
+ // return ancestor contents, follow a guidance symlink, or execute anything.
+ let ancestor = dirname(resolve(sourcePath));
+ for (let depth = 0; ; depth++) {
+  check();
+  if (depth >= 64) return delegate([], 'repository_guidance_discovery_failed');
+  for (const name of instructionNames) {
+   check();
+   try {
+    await lstat(join(ancestor, name));
+    return delegate([], 'inherited_repository_guidance_requires_quest');
+   } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+     return delegate([], 'repository_guidance_discovery_failed');
+   }
+  }
+  const parent = dirname(ancestor);
+  if (parent === ancestor) break;
+  ancestor = parent;
+ }
  let treeText: string;
  try {
   treeText = decoder.decode(await git(['ls-tree', '-r', '-z', '--full-tree', revision], LIMITS.treeBytes));
