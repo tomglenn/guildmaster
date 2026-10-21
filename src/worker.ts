@@ -1,5 +1,5 @@
 import { connectionTools } from './engine/connection-tools.ts';
-import { inlineTools, INLINE_ROUTING } from './engine/inline-tools.ts';
+import { inlineTools, inlineToolOutput, INLINE_ROUTING } from './engine/inline-tools.ts';
 import { readFile, mkdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -31,6 +31,8 @@ const questions = new QuestionBroker(emit);
 let session: AgentSession | undefined;
 let delivery: DeliveryAdapter | undefined;
 let cancelled = false;
+let inlineExhaustedReason: string | undefined;
+let exhaustInline: ((reason: string) => void) | undefined;
 let modelTimeoutError: string | undefined;
 let timeoutExit: ReturnType<typeof setTimeout> | undefined;
 function cancel(): void {
@@ -40,6 +42,10 @@ function cancel(): void {
 }
 process.on('message', (message: WorkerCommand) => {
   if (message?.type === 'cancel') cancel();
+  else if (message?.type === 'inline_exhausted' && typeof message.reason === 'string') {
+    inlineExhaustedReason ??= message.reason || 'Inline source budget exhausted.';
+    exhaustInline?.(inlineExhaustedReason);
+  }
   else if (message?.type === 'answer' && typeof message.id === 'string' && typeof message.answer === 'string') {
     try {
       if (message.delivery && questions.pending.has(message.id)) delivery?.track(message.delivery);
@@ -120,16 +126,53 @@ async function run(): Promise<void> {
   let assistantMessageIndex = 0;
   let emittedInlineRound: string | undefined;
   const currentRoundId = () => `${spec.runId}:${assistantMessageIndex}`;
+  let inlineDeadline: ReturnType<typeof setTimeout> | undefined;
+  let inlineRounds = 0;
+  let finalOnlyTurn = false;
+  let finalOnlyAnswered = false;
+  let partialBeforeFinal = '';
+  let refusedFinalAnswer = false;
+  let terminationApplied = false;
   const inline = inlineTools(spec, currentRoundId);
+  const inlineNames = new Set(inline.map(tool => tool.name));
+  const finalInstruction = () => `Inline source reading has ended: ${inlineExhaustedReason}. No tools are available. Give a final answer now using only the evidence already saved. Retain useful partial findings and citations; explicitly disclose incomplete coverage, missing pages, truncation and the budget limit. Do not claim a complete read or attempt further tools.`;
+  const applyInlineTermination = () => {
+    if (!session || !inlineExhaustedReason || terminationApplied) return;
+    terminationApplied = true;
+    clearTimeout(inlineDeadline);
+    // Supported SDK loadout changes apply to the next model turn, not the
+    // already captured tool batch. Execution wrappers below guard that batch.
+    session.setActiveToolsByName([]);
+    questions.abort();
+    void session.steer(finalInstruction()).catch(error => {
+      emit({ type: 'error', error: error instanceof Error ? error.message : String(error) });
+      cancel();
+    });
+  };
+  exhaustInline = reason => {
+    if (spec.role !== 'guildmaster') return;
+    inlineExhaustedReason ??= reason;
+    applyInlineTermination();
+  };
   const customTools = [...inline, ...connectionTools(spec), questions.tool(spec.role === 'delegate'), ...(guidance && (builtins.includes('read') || builtins.includes('bash')) ? guidanceTools(spec, guidance, emit) : []), ...(spec.role === 'guildmaster' ? guildmasterTools(spec) : canDelegate ? guildmasterTools(spec).filter(tool => ['list_projects', 'inspect_project', 'resolve_project_repository'].includes(tool.name)) : []),
     ...(canDelegate ? delegationTools(spec, id => { waitToolCallId = id; },addWorkspaceGuidance) : [])];
   const created = await createAgentSession({
     cwd: spec.cwd, agentDir, modelRuntime, resourceLoader, sessionManager: manager,
     model: resolved?.model, thinkingLevel: resolved?.thinkingLevel,
     tools: [...new Set([...(spec.role === 'guildmaster' ? [] : builtins), ...customTools.map((tool) => tool.name)])],
-    customTools,
+    customTools: customTools.map(tool => ({ ...tool, execute: async (...args: Parameters<typeof tool.execute>) => {
+      if (spec.role === 'guildmaster' && inlineExhaustedReason) throw new Error(finalInstruction());
+      if (inlineNames.has(tool.name) && !inlineDeadline) {
+        // A run-local safety ceiling only. Durable calls/rounds/deadline live on
+        // the server and may terminate this worker much earlier after resume.
+        inlineDeadline = setTimeout(() => exhaustInline?.('The 60-second inline source deadline was reached.'), 60_000);
+        inlineDeadline.unref();
+      }
+      return tool.execute(...args);
+    } })),
   });
   session = created.session;
+  applyInlineTermination();
   // Preserve the exact image bytes recorded by durable instruction delivery.
   // This is a run-only override; it does not change the user's saved settings.
   session.settingsManager.applyOverrides({ images: { autoResize: false, blockImages: false } });
@@ -159,6 +202,14 @@ async function run(): Promise<void> {
   });
   const unsubscribe = session.subscribe((event) => {
     modelProgress.observe(event);
+    if (event.type === 'turn_start') {
+      finalOnlyTurn = terminationApplied;
+      if (finalOnlyTurn) partialBeforeFinal = finalText;
+    }
+    if (event.type === 'turn_end' && emittedInlineRound === currentRoundId()) {
+      emit({ type: 'inline_round_end', roundId: currentRoundId() });
+      if (inlineRounds >= 4) exhaustInline?.('The four inline tool-round limit was reached.');
+    }
     if (event.type === 'turn_end' || event.type === 'compaction_end') queueMicrotask(reportContext);
     if (event.type === 'message_end' && (event.message.role === 'user' || event.message.role === 'toolResult')) delivery?.afterMessage();
     if (event.type === 'message_end' && event.message.role === 'toolResult' && event.message.toolCallId === waitToolCallId && !event.message.isError) {
@@ -179,8 +230,21 @@ async function run(): Promise<void> {
       emit({ type: 'delta', text: event.assistantMessageEvent.delta, messageId });
     } else if (event.type === 'message_end' && event.message.role === 'assistant') {
       const message = event.message;
+      if (inline.length && message.content.some(part => part.type === 'toolCall')) {
+        inlineRounds++;
+        if (inlineRounds > 4) exhaustInline?.('The four inline tool-round limit was reached.');
+      }
+      // Even a provider that ignores an empty tool loadout gets only one final
+      // generation. Never spin through tool-not-found/model retry loops.
+      if (finalOnlyTurn && inlineExhaustedReason && message.content.some(part => part.type === 'toolCall')) {
+        refusedFinalAnswer = true;
+        void session?.abort();
+      }
       const text = message.content.filter((part) => part.type === 'text').map((part) => part.text).join('\n');
-      if (text.trim()) finalText = text;
+      if (text.trim()) {
+        finalText = text;
+        if (finalOnlyTurn) finalOnlyAnswered = true;
+      }
       emit({ type: 'message', role: 'assistant', text, messageId: messageId ?? randomUUID() });
       messageId = undefined;
       // A subsequent successful retry clears a transient model error.
@@ -198,7 +262,7 @@ async function run(): Promise<void> {
       emit({ type: 'activity', tool: event.toolName, detail: String(detail).slice(0, 500) });
     } else if (event.type === 'tool_execution_end') {
       const output = event.result?.content?.filter((part: { type: string; text?: string }) => part.type === 'text').map((part: { text?: string }) => part.text ?? '').join('\n').trim() ?? '';
-      emit({ type: 'tool_end', toolCallId: event.toolCallId, tool: event.toolName, output: event.toolName.startsWith('slack_') && !event.isError ? 'Slack source content was read and saved in the conversation.' : output.slice(0, 20000), isError: !!event.isError });
+      emit({ type: 'tool_end', toolCallId: event.toolCallId, tool: event.toolName, output: event.toolName.startsWith('slack_') && !event.isError ? 'Slack source content was read and saved in the conversation.' : inlineToolOutput(output, inlineNames.has(event.toolName)), isError: !!event.isError });
       if (event.isError) emit({ type: 'activity', tool: event.toolName, detail: output ? `Tool error: ${output.slice(0, 3500)}` : 'Tool returned an error without details.' });
     }
   });
@@ -208,17 +272,26 @@ async function run(): Promise<void> {
     const prompt = spec.deliveries === undefined ? spec.prompt : delivery!.prepare(spec.deliveries);
     if (delivery?.images.length && !session.model?.input.includes('image')) throw new Error('The selected model cannot read images. Choose a model that supports images and resume this conversation.');
     try { await session.prompt(prompt, { expandPromptTemplates: false, images: delivery?.images }); }
-    catch (error) { if (!waitResultSaved || cancelled) throw error; }
+    catch (error) {
+      if (inlineExhaustedReason && !cancelled) terminalError = error instanceof Error ? error.message : String(error);
+      else if (!waitResultSaved || cancelled) throw error;
+    }
     await pendingYield;
     await delivery?.drain();
     if (cancelled) throw new Error('Run interrupted.');
     if (waitResultSaved) { emit({ type: 'yielded' }); return; }
+    if (inlineExhaustedReason && (refusedFinalAnswer || terminalError || !finalOnlyAnswered)) {
+      finalText = [...new Set([partialBeforeFinal, finalText].filter(Boolean)), `Inline reading stopped: ${inlineExhaustedReason}. The model did not provide a final answer from the saved evidence. Coverage is incomplete; no additional tool execution was permitted after termination.`].filter(Boolean).join('\n\n');
+      terminalError = undefined;
+    }
     if (terminalError) throw new Error(terminalError);
     if (!finalText.trim()) throw new Error('The agent finished without a text result. Inspect its saved transcript before continuing.');
     reportContext();
     emit({ type: 'complete', text: finalText });
   } finally {
     modelProgress.stop();
+    clearTimeout(inlineDeadline);
+    exhaustInline = undefined;
     unsubscribe();
     questions.abort();
     try { await delivery?.drain(); } finally { session.dispose(); }

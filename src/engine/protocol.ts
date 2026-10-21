@@ -62,6 +62,7 @@ export type WorkerEvent =
   | { type: 'message'; role: 'assistant'; text: string; messageId?: string }
   | { type: 'delta'; text: string; messageId?: string }
   | { type: 'inline_round'; roundId: string }
+  | { type: 'inline_round_end'; roundId: string }
   | { type: 'tool_start'; toolCallId: string; tool: string; detail: string; roundId?: string }
   | { type: 'tool_end'; toolCallId: string; tool: string; output: string; isError: boolean }
   | { type: 'activity'; tool: string; detail: string }
@@ -71,7 +72,8 @@ export type WorkerEvent =
 
 export type WorkerCommand =
   | { type: 'answer'; id: string; answer: string; delivery?: DeliveryInstruction }
-  | { type: 'cancel' };
+  | { type: 'cancel' }
+  | { type: 'inline_exhausted'; reason: string };
 
 export const BUILTIN_TOOLS = ['read', 'grep', 'find', 'ls', 'edit', 'write', 'bash'] as const;
 
