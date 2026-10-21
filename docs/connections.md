@@ -2,7 +2,23 @@
 
 Guildmaster includes a Slack MCP client for reading threads, channels, and search results. It does not expose posting, reactions, or uploads.
 
-GitHub work uses locally available tools, such as an authenticated `gh` CLI. Slack sign-in does not grant GitHub access.
+Quest agents use locally available tools, such as an authenticated `gh` CLI, for GitHub work. The main agent can also perform bounded GitHub reads using that existing login; no additional connection setup is needed. Slack sign-in does not grant GitHub access.
+
+## Direct GitHub and repository lookups
+
+Ask Guildmaster to summarize an exact `https://github.com/owner/repository/issues/123` URL, or answer a bounded factual question about one uniquely identified registered repository. Pure supported reads stay in the existing main conversation: they do not create a board card, a second executor, or an acceptance step. Request a quest explicitly when you want separately tracked work. Edits, independent PR reviews, multi-repository work and open-ended investigations still require quests.
+
+The service exposes only fixed GitHub issue/body/comments and PR-metadata reads, plus committed repository file reads and literal search. Main still has no shell or filesystem built-ins. It cannot issue arbitrary GitHub API requests, follow redirects, download attachments, or automatically follow links found in source content. Public GitHub lookups need no local project registration. Only `github.com` is supported initially.
+
+The transitional credential adapter retrieves the existing `gh` login server-side and verifies the account before accessing source. Credentials never enter tool arguments, worker specifications or results. The account is pinned for the request. **The underlying login may have write permissions:** these server-enforced read-only tools are not a least-privilege GitHub credential connection. Existing delegated PR creation is unchanged.
+
+Grants come from the saved direct user request, not retrieved instructions: one GitHub target or one registered repository at an exact resolved commit. Repository reads never use mutable working-tree contents, execute repository code, or read symlink/submodule content. Sensitive paths, known credential patterns, binary and oversized files are excluded; secret detection is defense-in-depth, not a guarantee. Applicable repository guidance requires delegation in this initial release rather than silently bypassing its workflow.
+
+Each direct request shares eight source calls, at most three pages per collection, 100 KiB of aggregate returned source receipts, two concurrent reads, a 15-second read deadline, sixty seconds from the first source read and four tool-using model rounds. Retries and system resumes retain usage. These limits are separate from the model inactivity watchdog and do not promise a total latency or dollar cap. Final-answer generation is allowed after source work stops. Coverage, commit/timestamp, pagination and truncation metadata remain in saved tool evidence; incomplete coverage must be disclosed rather than described as a complete read.
+
+Retrieved source is untrusted data. Once an inline read starts, consequential main-agent mutations are blocked for that direct request. A fresh direct user message is needed to authorize a quest or another action; source content cannot grant that authority. Cancellation fences the run and suppresses late receipts; it does not prove a remote request never completed.
+
+Source evidence may be sent to the model and retained in the main conversation. Starting a new conversation keeps the old transcript, tool receipts, activity and attachment context inspectable in History. This does not promise indefinite retention or automatic redaction of private source evidence. No tracked-inline promotion or inline editing lifecycle is implemented.
 
 ## Connect Slack
 
