@@ -68,7 +68,12 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
       if (lead.activeRunId !== worker.runId || !['running','awaiting_input'].includes(lead.status)) throw new AppError('This lead run is no longer active.',403);
       return { human: false, gm: undefined, lead, runId: worker.runId };
     }
-    const gmId = service.gmTokens.get(supplied); if (gmId) return {human: false, gm: service.get(gmId), lead: undefined};
+    const gmId = service.gmTokens.get(supplied);
+    if (gmId) {
+      const gm=service.get(gmId);
+      if(gm.activeRunId!==service.gmRunTokens.get(supplied)||!['running','awaiting_input'].includes(gm.status))throw new AppError('This Guildmaster run is no longer active.',403);
+      return {human:false,gm,lead:undefined};
+    }
     const cookie = req.headers.cookie?.split(';').map(x => x.trim()).find(x => x.startsWith('guildmaster_token='))?.slice('guildmaster_token='.length) ?? '';
     if (safeEqual(cookie, token)) return {human: true, gm: undefined, lead: undefined};
     throw new AppError('Open Guildmaster in this browser to connect to the local service.', 401);
@@ -89,6 +94,14 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         res.writeHead(ok||url.searchParams.has('error')?200:400,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'"});
         res.end(`<html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guildmaster Slack connection</title><body style="font:16px system-ui;padding:40px;background:#191a1c;color:#e9e9ec"><h1>${ok?'Slack connected':url.searchParams.has('error')?'Slack sign-in cancelled':'Slack could not be connected'}</h1><p>Return to Guildmaster Settings → Connections${ok||url.searchParams.has('error')?'.':' to check the connection and try again.'}</p></body></html>`);return;
       }
+      if(path==='/api/agent/inline-read') {
+        if(req.method!=='POST')throw new AppError('Method not allowed.',405);
+        const supplied=req.headers.authorization?.replace(/^Bearer /,'') ?? '';
+        const input=await body(req);
+        input.roundId ??= req.headers['x-guildmaster-round-id'];
+        const controller=new AbortController();const onClose=()=>{if(!res.writableEnded)controller.abort();};res.on('close',onClose);
+        try {json(res,200,await service.inlineReads.read(supplied,input,controller.signal));} finally {res.off('close',onClose);}return;
+      }
       if(path==='/api/agent/connections'||path==='/api/agent/connections/call') {
         const supplied=req.headers.authorization?.replace(/^Bearer /,'') ?? '';
         const run=service.connectionTokens.get(supplied);
@@ -96,7 +109,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         active();
         if(req.method==='GET'&&path==='/api/agent/connections') {json(res,200,{connections:connections.statuses(),availableTools:run!.grants.flatMap(g=>g.tools.map(t=>t.name))});return;}
         if(req.method!=='POST'||!path.endsWith('/call'))throw new AppError('Method not allowed.',405);
-        const input=await body(req);const grant=run!.grants.find(g=>g.connectionId===input.connectionId);
+        const input=await body(req);service.inlineReads.toolBudget(run!.questId);const grant=run!.grants.find(g=>g.connectionId===input.connectionId);
         if(!grant)throw new AppError('This connection is not available to this run.',403);
         const controller=new AbortController();const onClose=()=>{if(!res.writableEnded)controller.abort();};res.on('close',onClose);
         try {const result=await connections.call(grant,input.tool,input.arguments,AbortSignal.any([run!.controller.signal,controller.signal]));active();json(res,200,result);}finally{res.off('close',onClose);}return;
@@ -112,6 +125,9 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
       }
       if (path.startsWith('/api/')) {
         const auth = authorize(req);
+        // Source text cannot authorize project edits, new quests, or consequential coordination.
+        // A fresh direct user turn is required after a lookup; worker questions use IPC.
+        if(auth.gm&&req.method!=='GET'&&req.method!=='HEAD'&&service.inlineReads.hasRead(auth.gm.id))throw new AppError('Inline source data cannot authorize mutations. Ask the user in a new direct message before changing projects or creating/continuing quests.',403);
         const filePath = path.match(/^\/api\/quests\/([^/]+)\/files\/(.+)$/);
         if (filePath) {
           if (!auth.human) throw new AppError('Only the user can open quest files.',403);

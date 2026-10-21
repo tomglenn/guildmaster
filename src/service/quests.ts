@@ -7,6 +7,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { Store } from './store.ts';
+import { InlineReads } from './inline-reads.ts';
 import { AppError, ALLOWED_TOOLS, DEFAULT_TOOLS, MAX_SUBAGENTS, writes } from '../domain/types.ts';
 import type { IsolationRequest, Quest, CreateQuest, WorkspaceMode, DelegationSource, QuestWorkspace, LiveMessage, MessagePresentation, PreparedWorkspace } from '../domain/types.ts';
 import type { Delivery } from './store.ts';
@@ -38,8 +39,10 @@ function delegatedPrompt(brief: string, source?: DelegationSource): string {
 export class QuestService extends EventEmitter {
   store: Store; dataDir: string; defaultWorkspace: string; workerPath: string;
   live = new Map<string, Live>(); serviceUrl = ''; serviceToken = ''; gmTokens = new Map<string, string>();
+  gmRunTokens = new Map<string,string>();
   partialMessages = new Map<string, LiveMessage>();
   connections?: ConnectionManager;
+  inlineReads: InlineReads;
   connectionTokens = new Map<string,{questId:string;runId:string;grants:ConnectionGrant[];controller:AbortController}>();
   workerTokens = new Map<string, { questId: string; runId: string }>();
   maxWorkers: number; private familyTurns = new Map<string, number>(); private scheduleTurn = 0; private scheduling = false;
@@ -48,6 +51,7 @@ export class QuestService extends EventEmitter {
   private pendingDelegates = new Map<string,number>();
   constructor(options: { store: Store; dataDir: string; defaultWorkspace?: string; workerPath?: string; maxWorkers?: number; connections?: ConnectionManager }) {
     super(); this.connections=options.connections; this.store = options.store; this.dataDir = options.dataDir;
+    this.inlineReads = new InlineReads(this.store);
     this.defaultWorkspace = directory(options.defaultWorkspace ?? process.cwd());
     this.workerPath = options.workerPath ?? workerDefault;
     this.maxWorkers = options.maxWorkers ?? Number(process.env.GUILDMASTER_MAX_WORKERS ?? 13);
@@ -682,9 +686,11 @@ export class QuestService extends EventEmitter {
       q.guidanceRevision = revision;
     }
     this.clearLive(q.id);
+    const previousInlineOrigin=q.activeRunId ? this.inlineReads.origin(q.activeRunId) : this.store.lastRun(q.id)?.id ? this.inlineReads.origin(this.store.lastRun(q.id)!.id) : undefined;
     q.runCount++; q.status = 'queued'; q.error = undefined; q.activeRunId = randomUUID();
     this.store.saveDelivery({ ...(delivery ?? { id: randomUUID(), questId: q.id, commandId, kind: 'prompt', text: prompt, createdAt: Date.now() }), ...(attachments.length ? { attachments } : {}) });
     const message = this.store.message(q.id, 'user', prompt, undefined, { ...presentation, ...(attachments.length ? { attachments } : {}) }); this.store.save(q);
+    if(q.kind==='guildmaster')this.inlineReads.bind(q.activeRunId, presentation?.source==='system'&&previousInlineOrigin ? previousInlineOrigin : message.id);
     const available=this.connections?.snapshot() ?? [];
     const inherited=q.parentQuestId ? this.store.lastRun(q.parentQuestId)?.data.connectionGrants ?? [] : available;
     const connectionGrants=inherited.flatMap(grant=>{const current=available.find(c=>c.connectionId===grant.connectionId&&c.teamId===grant.teamId&&c.userId===grant.userId);return current?[{...current,tools:current.tools.filter(t=>grant.tools.some(old=>old.name===t.name))}]:[];});
@@ -703,11 +709,12 @@ export class QuestService extends EventEmitter {
     const token = randomUUID();
     const connectionToken=randomUUID();
     const connectionGrants=this.store.getRun(runId)?.data.connectionGrants ?? [];
+    const inline=this.inlineReads.attach(q,runId);
     this.connectionTokens.set(connectionToken,{questId:q.id,runId,grants:connectionGrants,controller:new AbortController()});
     try {
       const specDir = join(this.dataDir, 'runs'); mkdirSync(specDir, { recursive: true });
       const path = join(specDir, `${runId}.json`);
-      if (q.kind === 'guildmaster') this.gmTokens.set(token, q.id);
+      if (q.kind === 'guildmaster') {this.gmTokens.set(token, q.id);this.gmRunTokens.set(token,runId);}
       if (q.kind === 'quest') this.workerTokens.set(token, { questId: q.id, runId });
       writeFileSync(path, JSON.stringify({ questId: q.id, runId, cwd: q.workspacePath, prompt,
         deliveries: this.store.pendingDeliveries(q.id).map(delivery => ({ ...delivery, images: delivery.attachments?.map(attachment => {
@@ -719,13 +726,13 @@ export class QuestService extends EventEmitter {
           ? q.sessionEstablished === true
           : !!q.result || this.store.deliveries(q.id).some(delivery => !!delivery.deliveredAt),
         sessionPath: q.sessionPath, model: q.model, tools: q.tools, instructions: q.instructions,
-        connectionToken, connectionGrants, role: q.kind, parentQuestId: q.parentQuestId, questBoard: q.kind === 'guildmaster' ? this.questBoardSnapshot() : undefined, serviceUrl: this.serviceUrl, serviceToken: token, workspaceMode: q.workspaceMode,
+        ...inline, connectionToken, connectionGrants, role: q.kind, parentQuestId: q.parentQuestId, questBoard: q.kind === 'guildmaster' ? this.questBoardSnapshot() : undefined, serviceUrl: this.serviceUrl, serviceToken: token, workspaceMode: q.workspaceMode,
         sourcePath: q.sourcePath, guidancePath: q.guidanceRevision ? join(this.dataDir, 'guidance', `${q.guidanceRevision}.json`) : undefined,
         agentDir: join(this.dataDir, 'engine'), project: q.project, workspaces: q.workspaces, workspacePolicy:q.workspacePolicy, isolation:q.isolation, preparedWorkspaces:q.preparedWorkspaces, outputPath:q.outputPath,
       }), { mode: 0o600 });
       const child = fork(this.workerPath, [path], {
         execArgv: ['--experimental-strip-types'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], detached: true,
-        env: { ...process.env, GUILDMASTER_WORKER: '1' },
+        env: { ...process.env, GUILDMASTER_WORKER: '1', GUILDMASTER_INLINE_TOKEN: inline?.inlineToken ?? '' },
       });
       let finish!: () => void; const done = new Promise<void>(resolve => { finish = resolve; });
       const live: Live = { child, runId, startedAt: Date.now(), done }; this.live.set(q.id, live);
@@ -735,9 +742,10 @@ export class QuestService extends EventEmitter {
       child.on('error', error => this.fail(q.id, runId, error.message));
       // 'close' also fires when spawn fails before a PID exists; 'exit' does not.
       child.on('close', (code, signal) => {
+        this.inlineReads.revoke(q.id,runId);
         this.clearLive(q.id); this.store.interruptToolCalls(q.id, runId);
         this.connectionTokens.get(connectionToken)?.controller.abort();this.connectionTokens.delete(connectionToken);
-        clearTimeout(live.cancelTimer); this.live.delete(q.id); this.gmTokens.delete(token); this.workerTokens.delete(token);
+        clearTimeout(live.cancelTimer); this.live.delete(q.id); this.gmRunTokens.delete(token); this.gmTokens.delete(token); this.workerTokens.delete(token);
         const current = this.get(q.id);
         if (current.activeRunId === runId && ['running','awaiting_input'].includes(current.status)) {
           this.fail(q.id, runId, `Worker stopped before returning a result (${signal ?? code}). ${stderr.slice(-1200)}`, true);
@@ -745,13 +753,19 @@ export class QuestService extends EventEmitter {
         finish(); this.changed(q.id); this.wakeParents(); this.schedule();
       });
       this.changed(q.id);
-    } catch (error) { this.connectionTokens.get(connectionToken)?.controller.abort();this.connectionTokens.delete(connectionToken);this.gmTokens.delete(token); this.workerTokens.delete(token); this.fail(q.id, runId, String(error)); }
+    } catch (error) { this.inlineReads.revoke(q.id,runId);this.connectionTokens.get(connectionToken)?.controller.abort();this.connectionTokens.delete(connectionToken);this.gmRunTokens.delete(token);this.gmTokens.delete(token); this.workerTokens.delete(token); this.fail(q.id, runId, String(error)); }
   }
   workerEvent(id: string, runId: string, raw: unknown) {
     if (!raw || typeof raw !== 'object') return;
     const m = raw as Record<string, any>; const q = this.get(id);
     if (q.activeRunId !== runId || !['running','awaiting_input'].includes(q.status)) return;
-    if (m.type === 'delivered') {
+    if (m.type === 'inline_round') {
+      if(q.kind==='guildmaster'&&!this.inlineReads.round(id,runId,m.roundId)&&this.inlineReads.hasRead(id)) {
+        // Stop source authority, not the executor: it must still report partial coverage.
+        this.inlineReads.revoke(id,runId);
+        this.store.event(id,'inline_budget','Four tool-using model rounds exhausted. Inline reads stopped.');
+      }
+    } else if (m.type === 'delivered') {
       const allowed = new Set(this.store.getRun(runId)?.data.deliveryIds ?? []);
       if (!Array.isArray(m.ids) || m.ids.some((deliveryId: unknown) => typeof deliveryId !== 'string' || !allowed.has(deliveryId))) throw new AppError('Invalid delivery acknowledgment.');
       const ids = new Set<string>(m.ids);
@@ -996,6 +1010,7 @@ export class QuestService extends EventEmitter {
     });
   }
   stopWorker(id: string) {
+    this.inlineReads.revoke(id);
     for(const [token,run] of this.connectionTokens)if(run.questId===id){run.controller.abort();this.connectionTokens.delete(token);}
     const live = this.live.get(id); if (!live) return;
     if (live.child.connected) live.child.send({ type: 'cancel' }, () => {});

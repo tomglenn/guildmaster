@@ -61,6 +61,7 @@ test('HTTP handler validates local origin and authorization without a TCP listen
   app.store.message('guildmaster-fixture', 'user', originalRequest);
   app.store.run(originalRun, 'guildmaster-fixture', { status: 'running', prompt: originalRequest });
   app.service.gmTokens.set('guildmaster-scoped-token', 'guildmaster-fixture');
+  app.service.gmRunTokens.set('guildmaster-scoped-token', originalRun);
   const gmAuth = { authorization: 'Bearer guildmaster-scoped-token' };
   const folderPath = `/api/folders?path=${encodeURIComponent(dataDir)}`;
   assert.equal((await request(folderPath)).status, 401);
@@ -138,6 +139,7 @@ test('HTTP handler validates local origin and authorization without a TCP listen
   const followupRun = 'guildmaster-source-followup';
   const gm = app.service.get('guildmaster-fixture');
   app.store.save({ ...gm, activeRunId: followupRun });
+  app.service.gmRunTokens.set('guildmaster-scoped-token',followupRun);
   app.store.message(gm.id, 'user', followupRequest);
   app.store.run(followupRun, gm.id, { status: 'running', prompt: followupRequest });
   const feedbackBody = { message: 'Add a brief summary', commandId: 'gm-scratch-followup', sourceRequest: spoof, delegationSource: spoof };
