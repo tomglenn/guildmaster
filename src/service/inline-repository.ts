@@ -15,6 +15,23 @@ const LIMITS = { deadlineMs: 15_000, treeBytes: 2 * 1024 * 1024, fileBytes: 256 
  scanBytes: 2 * 1024 * 1024, files: 200, lines: 400, matches: 50, resultBytes: 100 * 1024 };
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
+// Match the repository instruction/skill conventions in engine/guidance.ts without
+// importing its worktree discovery or executing a skill runner in main. Phase 1
+// deliberately delegates even optional skills and unreadable/dangling guidance.
+const instructionNames = new Set(['AGENTS.override.md', 'AGENTS.md', 'AGENTS.MD', 'CLAUDE.md', 'CLAUDE.MD']);
+const skillOwners = new Set(['.agents', '.pi', '.claude', '.cursor', '.codex']);
+function guidanceScope(path: string): string | undefined {
+ const parts = path.split('/');
+ for (let i = 0; i < parts.length; i++) {
+  if (instructionNames.has(parts[i]) || (skillOwners.has(parts[i]) && (parts[i + 1] === 'skills' || i === parts.length - 1)))
+   return parts.slice(0, i).join('/');
+ }
+ return undefined;
+}
+function withinScope(path: string, scope: string): boolean {
+ return scope === '' || path === scope || path.startsWith(scope + '/');
+}
+
 function validPath(path: unknown): path is string {
  return typeof path === 'string' && path.length > 0 && Buffer.byteLength(path) <= 1024 &&
   !isAbsolute(path) && !/[\\\x00-\x1f\x7f:]/.test(path) &&
@@ -74,16 +91,48 @@ export async function readRepository(sourcePath: string, input: RepositoryReadIn
   });
  };
  if ((await git(['cat-file', '-t', revision], 1024)).toString().trim() !== 'commit') throw new Error('Revision must identify a commit');
- const tree = await git(['ls-tree', '-r', '-z', '--full-tree', revision], LIMITS.treeBytes);
+ // A receipt, not a successful source read: main cannot follow repository
+ // workflows. Keep provenance/zero coverage and expose only bounded safe paths.
+ const delegate = (paths: string[], reason = 'repository_guidance_requires_quest') => {
+  const instructionPaths: string[] = [];
+  let bytes = 0;
+  for (const path of paths) {
+   if (!validPath(path) || sensitivePath(path)) continue;
+   const size = Buffer.byteLength(JSON.stringify(path));
+   if (instructionPaths.length >= 50 || bytes + size > 4096) break;
+   instructionPaths.push(path); bytes += size;
+  }
+  return { operation: input.operation, revision, path: input.path ?? '',
+   error: 'repository_guidance_requires_quest', requiresQuest: true,
+   message: 'Inline source withheld. Delegate to a quest to resolve repository guidance and workflows.',
+   instructionPaths, instructionPathCount: paths.length,
+   instructionPathsTruncated: instructionPaths.length !== paths.length,
+   coverage: { filesScanned: 0, bytesScanned: 0, complete: false,
+    scope: input.path ?? '', exclusionsApplied: true, reasons: [reason] } };
+ };
+ let treeText: string;
+ try {
+  treeText = decoder.decode(await git(['ls-tree', '-r', '-z', '--full-tree', revision], LIMITS.treeBytes));
+ } catch {
+  signal.throwIfAborted();
+  return delegate([], 'repository_guidance_discovery_failed');
+ }
  const entries: { path: string; oid: string; mode: string }[] = [];
- for (const record of tree.toString('utf8').split('\0')) {
+ for (const record of treeText.split('\0')) {
   if (!record) continue;
   const match = /^(\d{6}) (?:blob|commit) ([a-f0-9]{40})\t([\s\S]+)$/.exec(record);
-  if (!match) throw new Error('Unsupported repository tree');
-  // Invalid UTF-8 paths cannot be round-tripped, and are never passed back to Git.
-  if (match[3].includes('\ufffd')) continue;
+  if (!match) return delegate([], 'repository_guidance_discovery_failed');
   entries.push({ mode: match[1], oid: match[2], path: match[3] });
  }
+ // Inspect the complete bounded committed tree before loading any source blob.
+ // Reads need ancestor scopes; searches also need scopes below their candidate
+ // tree, even if matching files would otherwise be excluded or beyond a budget.
+ const instructions = entries.filter(entry => {
+  const scope = guidanceScope(entry.path);
+  return scope !== undefined && (withinScope(input.path ?? '', scope) ||
+   (input.operation === 'search' && withinScope(scope, input.path ?? '')));
+ }).map(entry => entry.path);
+ if (instructions.length) return delegate(instructions);
  // Per-call caching also avoids spawning hundreds of processes for duplicate blobs.
  const sizes = new Map<string, number>(), blobs = new Map<string, Buffer>();
  const skipped = { excluded: 0, unsupported: 0, oversized: 0, binary: 0, secrets: 0 };
