@@ -10,6 +10,11 @@ export interface GitHubReadInput {
   page?: number;
 }
 
+export interface GitHubReadOptions {
+  /** Synchronous broker authorization after identity verification, before source access. */
+  authorizeAccount: (account: string) => void;
+}
+
 interface Dependencies {
   run: (file: string, args: string[], options: { env: NodeJS.ProcessEnv; signal: AbortSignal; timeout: number; maxBuffer: number; encoding: 'utf8' }) => Promise<{ stdout: string }>;
   fetch: typeof fetch;
@@ -69,7 +74,7 @@ function metadata(data: Record<string, any>) {
 
 /** Boundary injection for tests; neither dependency is supplied by tool callers. */
 export function createGitHubReader(dependencies: Dependencies) {
-  return async (input: GitHubReadInput, signal: AbortSignal): Promise<object> => {
+  return async (input: GitHubReadInput, signal: AbortSignal, options?: GitHubReadOptions): Promise<object> => {
     input = { ...input };
     validate(input);
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
@@ -124,6 +129,7 @@ export function createGitHubReader(dependencies: Dependencies) {
       }
       const account = record((await get('/user')).value).login;
       if (typeof account !== 'string' || !/^[a-z\d-]{1,100}$/i.test(account)) throw new GitHubReadError('GitHub account identity could not be verified.');
+      options?.authorizeAccount(account);
       const repository = `${input.owner}/${input.repository}`;
       const page = input.page ?? 1;
       const path = `/repos/${repository}/${input.operation === 'pull' ? 'pulls' : 'issues'}/${input.number}`;
@@ -195,7 +201,7 @@ export function createGitHubReader(dependencies: Dependencies) {
   };
 }
 
-export const readGitHub: (input: GitHubReadInput, signal: AbortSignal) => Promise<object> = createGitHubReader({
+export const readGitHub: (input: GitHubReadInput, signal: AbortSignal, options?: GitHubReadOptions) => Promise<object> = createGitHubReader({
   run: async (file, args, options) => execute(file, args, options),
   fetch: (...args) => globalThis.fetch(...args),
 });

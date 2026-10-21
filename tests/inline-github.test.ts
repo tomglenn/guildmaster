@@ -179,6 +179,76 @@ test('each call captures its active account token once, including across account
   assert.deepEqual(observed, ['Bearer token-alice', 'Bearer token-alice', 'Bearer token-bob', 'Bearer token-bob']);
 });
 
+test('account authorization runs synchronously after verified identity and before every source operation', async () => {
+  for (const operation of ['issue', 'comments', 'pull'] as const) {
+    const events: string[] = [];
+    const read = createGitHubReader({
+      run: async () => ({ stdout: 'test-secret-token' }),
+      fetch: (async (url: string) => {
+        if (url.endsWith('/user')) {
+          events.push('identity');
+          return json({ login: 'alice' });
+        }
+        events.push('source');
+        return json(operation === 'comments' ? [] : {});
+      }) as typeof fetch,
+    });
+    await read({ ...input, operation }, signal(), {
+      authorizeAccount(account) {
+        assert.equal(account, 'alice');
+        events.push('authorize');
+        queueMicrotask(() => events.push('microtask'));
+      },
+    });
+    assert.deepEqual(events, ['identity', 'authorize', 'source', 'microtask']);
+  }
+});
+
+test('an account switch can be rejected before a second source fetch without leaking callback errors', async () => {
+  let current = 'alice';
+  let pinned: string | undefined;
+  const requests: string[] = [];
+  const read = createGitHubReader({
+    run: async () => ({ stdout: 'test-secret-token' }),
+    fetch: (async (url: string) => {
+      requests.push(url);
+      return json(url.endsWith('/user') ? { login: current } : {});
+    }) as typeof fetch,
+  });
+  const options = {
+    authorizeAccount(account: string) {
+      if (pinned && pinned !== account) throw new Error(`test-secret-token: switched to ${account}`);
+      pinned = account;
+    },
+  };
+  await read(input, signal(), options);
+  current = 'bob';
+  await assert.rejects(read(input, signal(), options), error => {
+    assert.equal((error as Error).message, 'GitHub login/read unavailable. Sign in using gh auth login.');
+    assert.equal((error as Error).cause, undefined);
+    return true;
+  });
+  assert.equal(pinned, 'alice');
+  assert.deepEqual(requests, [
+    'https://api.github.com/user',
+    'https://api.github.com/repos/octocat/hello-world/issues/42',
+    'https://api.github.com/user',
+  ]);
+});
+
+test('unverified identities never reach account authorization or source fetch', async () => {
+  for (const login of [undefined, null, '', 'invalid/login']) {
+    let requests = 0, authorizations = 0;
+    const read = createGitHubReader({
+      run: async () => ({ stdout: 'test-secret-token' }),
+      fetch: (async () => { requests++; return json({ login }); }) as typeof fetch,
+    });
+    await assert.rejects(read(input, signal(), { authorizeAccount() { authorizations++; } }), /identity could not be verified/);
+    assert.equal(requests, 1);
+    assert.equal(authorizations, 0);
+  }
+});
+
 test('token environment overrides are excluded from the fixed subprocess', async () => {
   const old = process.env.GH_TOKEN;
   process.env.GH_TOKEN = 'environment-secret';
