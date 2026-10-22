@@ -1,3 +1,4 @@
+import { hasAcceptableResult } from '../domain/quest-acceptance.ts';
 import { fork, execFile } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -51,7 +52,7 @@ export class QuestService extends EventEmitter {
   }
   maxWorkers: number; private familyTurns = new Map<string, number>(); private scheduleTurn = 0; private scheduling = false;
   private queue: Promise<unknown> = Promise.resolve(); private stopping = false;
-  private setups = new Map<string,{fingerprint:string;task:Promise<any>}>();
+  private setups = new Map<string,{fingerprint:string;task:Promise<any>;action:string}>();
   private pendingDelegates = new Map<string,number>();
   constructor(options: { store: Store; dataDir: string; defaultWorkspace?: string; workerPath?: string; maxWorkers?: number; connections?: ConnectionManager }) {
     super(); this.connections=options.connections; this.store = options.store; this.dataDir = options.dataDir;
@@ -76,14 +77,27 @@ export class QuestService extends EventEmitter {
   }
   get(id: string) { const q = this.store.get(id); if (!q) throw new AppError('Quest not found.', 404); return q; }
   agents(id: string) { return this.store.children(id).sort((a,b) => a.createdAt - b.createdAt).map(q=>({...q,queueReason:this.queueReason(q)})); }
-  withAgentSummary(q: Quest, agents: Quest[] = this.store.children(q.id)) {
-    return { ...q, queueReason:this.queueReason(q), agentSummary: { total: agents.length, active: agents.filter(a => !terminalAgent(a)).length, needsAttention: agents.filter(a => ['failed','interrupted'].includes(a.status)).length } };
+  withAgentSummary(q: Quest, agents: Quest[] = this.store.children(q.id), questions = this.store.pendingRequestSummary()) {
+    const family = [q, ...agents];
+    const pending = family.flatMap(member => questions.has(member.id) ? [questions.get(member.id)!] : []);
+    const pendingQuestions = pending.reduce((sum, value) => sum + value.count, 0);
+    const activeFamily = family.filter(member => !!member.activeRunId || ['queued','running','waiting','awaiting_input'].includes(member.status));
+    const active = activeFamily.length;
+    const attention = family.filter(member => ['failed','interrupted','awaiting_review'].includes(member.status));
+    const group = pendingQuestions ? 'input' : q.reopenedAt || attention.length || !active ? 'attention' : 'working';
+    const label = pendingQuestions ? questions.has(q.id) ? 'Needs input' : 'Agent needs input' : q.reopenedAt ? 'Reopened' : q.status === 'awaiting_review' ? 'Ready for review' : q.status === 'accepted' ? 'Accepted' : attention.some(member => member.status === 'failed') ? 'Failed' : attention.some(member => member.status === 'interrupted') ? 'Interrupted' : q.status === 'queued' ? 'Queued' : 'In progress';
+    const transitions = (attention.length ? attention : activeFamily.length ? activeFamily : [q]).map(member => member.statusChangedAt ?? member.updatedAt);
+    const since = pendingQuestions ? Math.min(...pending.map(r => r.since)) : q.reopenedAt ?? Math.min(...transitions);
+    const inbox: NonNullable<Quest['inbox']> = { included: q.closedAt === undefined || !!pendingQuestions || !!active, group, label, since, pendingQuestions, active };
+    const queueReason = this.queueReason(q);
+    return { ...q, inbox, ...(queueReason ? {queueReason} : {}), agentSummary: { total: agents.length, active: agents.filter(a => !terminalAgent(a)).length, needsAttention: agents.filter(a => ['failed','interrupted'].includes(a.status)).length } };
   }
   // One pass over all quests; summaries must not query children per quest.
   board() {
     const all = this.store.list(); const children = new Map<string, Quest[]>();
+    const questions = this.store.pendingRequestSummary();
     for (const q of all) if (q.parentQuestId) children.set(q.parentQuestId, [...(children.get(q.parentQuestId) ?? []), q]);
-    return { quests: all.filter(q => q.kind === 'quest').map(q => this.withAgentSummary(q, children.get(q.id) ?? [])), guildmaster: all.find(q => q.kind === 'guildmaster' && !q.archivedAt) ?? null };
+    return { quests: all.filter(q => q.kind === 'quest').map(q => this.withAgentSummary(q, children.get(q.id) ?? [], questions)), guildmaster: all.find(q => q.kind === 'guildmaster' && !q.archivedAt) ?? null };
   }
   detail(id: string) {
     const agents = this.agents(id);
@@ -243,7 +257,7 @@ export class QuestService extends EventEmitter {
     }
   }
   private canLaunch(q: Quest) {
-    if (this.live.has(q.id) || this.live.size >= this.maxWorkers) return false;
+    if (q.closedAt !== undefined || q.archivedAt !== undefined || (q.parentQuestId && this.get(q.parentQuestId).closedAt !== undefined) || this.live.has(q.id) || this.live.size >= this.maxWorkers) return false;
     if (q.kind !== 'guildmaster' && [...this.live.keys()].filter(id => this.get(id).kind !== 'guildmaster').length >= this.maxWorkers - 1) return false;
     return !writes(q) || ![...this.live.keys()].some(id => {
       const other = this.get(id);
@@ -255,6 +269,15 @@ export class QuestService extends EventEmitter {
     if (writes(q) && [...this.live.keys()].some(id=>id!==q.id && writes(this.get(id)) && workspaceRoots(this.get(id)).some(a=>workspaceRoots(q).some(b=>sameTree(a,b))))) return 'Waiting for workspace';
     return 'Waiting for an available worker';
   }
+  // Includes asynchronous setup and its cleanup, not just already-persisted agents.
+  // Storage deletion and schedule overlap checks must retain this family until it settles.
+  familyPreparing(id: string): boolean {
+    const q = this.store.get(id);
+    const root = q?.parentQuestId ?? id;
+    const ids = new Set([root, ...this.store.children(root).map(child => child.id)]);
+    return [...ids].some(member => (this.pendingDelegates.get(member) ?? 0) > 0)
+      || [...this.setups.values()].some(setup => [...ids].some(member => setup.action.endsWith(`:${member}`)));
+  }
   private setup<T>(commandId:unknown, action:string, payload:unknown, operation:()=>Promise<T>):Promise<T> {
     const command = this.checkCommand(commandId,action,payload);
     if (command.cached) return Promise.resolve(command.cached);
@@ -264,13 +287,13 @@ export class QuestService extends EventEmitter {
       return pending.task;
     }
     const task = operation().finally(()=>this.setups.delete(command.id));
-    this.setups.set(command.id,{fingerprint:command.fingerprint,task});
+    this.setups.set(command.id,{fingerprint:command.fingerprint,task,action});
     return task;
   }
   private setupGuard(parent:Quest) {
     return () => {
       const current = this.get(parent.id);
-      if (this.stopping || current.archivedAt || current.activeRunId !== parent.activeRunId || current.runCount !== parent.runCount || !['running','awaiting_input','waiting'].includes(current.status)) throw new AppError('The requesting lead is no longer active. Workspace preparation stopped.',409);
+      if (this.stopping || current.closedAt !== undefined || current.archivedAt || current.activeRunId !== parent.activeRunId || current.runCount !== parent.runCount || !['running','awaiting_input','waiting'].includes(current.status)) throw new AppError('The requesting lead is no longer active. Workspace preparation stopped.',409);
     };
   }
   schedule() {
@@ -297,7 +320,7 @@ export class QuestService extends EventEmitter {
   private lead(id: string, expectedRunId?: string) {
     const parent = this.get(id);
     if (parent.kind !== 'quest') throw new AppError('Only quest leads can delegate work.', 403);
-    if (parent.archivedAt || parent.status === 'cancelled') throw new AppError('Restore or reopen the parent quest before delegating.', 409);
+    if (parent.closedAt !== undefined || parent.archivedAt || parent.status === 'cancelled') throw new AppError('Restore or reopen the parent quest before delegating.', 409);
     if (expectedRunId && (parent.activeRunId !== expectedRunId || !['running','awaiting_input'].includes(parent.status))) throw new AppError('This lead run is no longer active.', 403);
     return parent;
   }
@@ -479,12 +502,12 @@ export class QuestService extends EventEmitter {
         if (snapshot.parent.workspacePolicy === 'isolated' && snapshot.requests.some(r => !this.get(parentId).isolation?.some(saved => saved.repositoryId === r.repositoryId && saved.commit === r.commit))) throw new AppError('The quest revision changed during assignment preparation. Retry.',409);
         if (this.get(parentId).runCount !== snapshot.parent.runCount) throw new AppError('The requesting lead changed during workspace preparation.',409);
         const child = this.get(id);
-        if (child.runCount !== snapshot.child.runCount || child.status !== snapshot.child.status || child.archivedAt || this.live.has(id) || child.activeRunId) throw new AppError('The assignment changed during workspace preparation.',409);
+        if (child.runCount !== snapshot.child.runCount || child.status !== snapshot.child.status || child.closedAt !== undefined || child.archivedAt || this.live.has(id) || child.activeRunId) throw new AppError('The assignment changed during workspace preparation.',409);
       };
       const replacement = await prepareIsolatedWorkspaces({dataDir:this.dataDir,workspaces:selectedWorkspaces(snapshot.child),requests:snapshot.requests,guidance:await readGuidance(this.dataDir,snapshot.child.guidanceRevision!),assertActive:guard});
       try {
         return await this.continue(id,input,false,undefined,{parentId,expectedRunId,replacement:{...replacement,isolation:snapshot.requests,guard}});
-      } finally { if (this.get(id).guidanceRevision !== replacement.guidanceRevision) await replacement.cleanup(); }
+      } finally { if (this.store.get(id)?.guidanceRevision !== replacement.guidanceRevision) await replacement.cleanup(); }
     });
   }
   async waitForAgents(parentId: string, input: { agentIds?: unknown; commandId: string }, expectedRunId?: string) {
@@ -720,6 +743,8 @@ export class QuestService extends EventEmitter {
     });
   }
   prepare(q: Quest, prompt: string, commandId: string, delivery?: Delivery, sourcePrompt = prompt, presentation?: MessagePresentation, images?: ImageUpload[]) {
+    if (q.closedAt !== undefined) throw new AppError('Reopen this quest before continuing it.',409);
+    delete q.reopenedAt;
     const inheritedRun = presentation?.source === 'quest_lead' ? (q.parentQuestId ? this.get(q.parentQuestId).activeRunId : q.sourceRequest?.runId)
       : presentation?.source === 'guildmaster' ? q.sourceRequest?.runId : undefined;
     const attachments = this.store.saveImages(q.id, images ?? this.runImages(inheritedRun));
@@ -932,7 +957,7 @@ export class QuestService extends EventEmitter {
       await this.settleWorker(id);
       if (delegated) this.lead(delegated.parentId, delegated.expectedRunId);
       const q = this.get(id);
-      if (q.archivedAt !== undefined) throw new AppError('Restore this quest before continuing it.', 409);
+      if (q.closedAt !== undefined || q.archivedAt !== undefined) throw new AppError('Reopen this quest before continuing it.', 409);
       const parent = q.parentQuestId ? this.lead(q.parentQuestId) : undefined;
       this.checkAvailable(q);
       if (this.store.requests(id).some(r => r.status === 'pending')) throw new AppError('Answer the pending question before continuing.', 409);
@@ -975,55 +1000,124 @@ export class QuestService extends EventEmitter {
       this.schedule(); return delegated ? { agent: this.get(id) } : { quest: this.get(id) };
     });
   }
-  async action(id: string, action: 'accept' | 'cancel' | 'archive' | 'restore', input: { commandId: string }) {
+  async action(id: string, action: 'accept' | 'cancel' | 'archive' | 'restore' | 'accept-close' | 'close' | 'reopen', input: { commandId: string; expectedRunCount?: number; expectedClosedAt?: number; confirmCancel?: boolean }) {
+    if (['accept-close','close','reopen','cancel','restore'].includes(action)) return this.lifecycle(id, action, input);
     return this.serialize(async () => {
       const command = this.checkCommand(input.commandId, `${action}:${id}`, input); if (command.cached) return command.cached;
-      const q = this.get(id);
-      if (action === 'archive' || action === 'restore') {
+      let q = this.get(id);
+      if (action === 'archive') {
         if (q.kind !== 'quest') throw new AppError('Only quests can be archived or restored.', 409);
-        if (action === 'archive' && !['accepted', 'cancelled'].includes(q.status)) throw new AppError('Accept or cancel this quest before archiving it.', 409);
+        if (q.closedAt === undefined && !['accepted', 'cancelled'].includes(q.status)) throw new AppError('Accept or cancel this quest before archiving it.', 409);
         // Accepted results and canceled runs may still be releasing their worker and workspace lock.
-        if (action === 'archive') await this.settleWorker(id);
+        const runCount = q.runCount;
+        await this.settleWorker(id);
+        q = this.get(id);
+        if (this.familyPreparing(id) || (q.closedAt === undefined && !['accepted','cancelled'].includes(q.status)) || q.runCount !== runCount || [q,...this.store.children(id)].some(member => member.activeRunId || ['queued','running','waiting','awaiting_input'].includes(member.status) || this.store.requests(member.id).some(r => r.status === 'pending'))) throw new AppError('The quest family changed or still has unfinished work.',409);
         const changed = action === 'archive' ? q.archivedAt === undefined : q.archivedAt !== undefined;
         this.store.transaction(() => {
           if (changed) {
-            if (action === 'archive') q.archivedAt = Date.now(); else delete q.archivedAt;
+            q.archivedAt = Date.now();
+            q.closedAt ??= q.archivedAt; q.closeReason ??= 'legacy';
             this.store.save(q);
             this.store.event(id, action === 'archive' ? 'archived' : 'restored', action === 'archive' ? 'You archived this quest. Files and conversation remain saved.' : 'You restored this quest to the board.');
           }
+          q = this.withAgentSummary(this.get(id));
           this.store.saveCommand(command.id, command.fingerprint, { quest: q });
         });
         if (changed) this.changed(id);
         return { quest: q };
       }
-      if (q.archivedAt !== undefined) throw new AppError('Restore this quest before changing its status.', 409);
+      if (q.closedAt !== undefined || q.archivedAt !== undefined) throw new AppError('Reopen this quest before changing its status.', 409);
       if (action === 'accept' && [id, ...this.store.children(id).map(agent => agent.id)].some(questId => this.store.requests(questId).some(request => request.status === 'pending'))) throw new AppError('Answer the pending questions before accepting this quest.',409);
+      if (action === 'accept' && [q,...this.store.children(id)].some(member => member.activeRunId || ['queued','running','waiting','awaiting_input'].includes(member.status))) throw new AppError('Finish the active family work before accepting this quest.',409);
       if (action === 'accept' && q.kind === 'delegate') throw new AppError('Delegate reports are reviewed by their quest lead.',409);
       if (action === 'accept' && q.status !== 'awaiting_review') throw new AppError('Only a result awaiting review can be accepted.', 409);
-      q.status = action === 'accept' ? 'accepted' : 'cancelled'; const runId = q.activeRunId; q.activeRunId = undefined;
+      q.status = 'accepted'; q.activeRunId = undefined;
+      q.acceptance = {acceptedAt:Date.now(),runCount:q.runCount,...(q.result !== undefined ? {result:q.result} : {})};
       this.store.transaction(() => {
-        this.store.save(q); this.store.event(id, q.status, action === 'accept' ? 'You accepted this result.' : 'You canceled this quest. Files and conversations remain saved.');
-        if (runId) this.store.run(runId, id, { status: 'cancelled', endedAt: Date.now() });
-        if (action === 'cancel') for (const r of this.store.requests(id).filter(r => r.status === 'pending')) this.store.request({ ...r, status: 'answered', answer: 'Quest canceled by the user.' });
-        if (action === 'cancel') for (const delivery of this.store.pendingDeliveries(id)) this.store.saveDelivery({ ...delivery, cancelledAt: Date.now() });
-        if (action === 'cancel') {
-          this.store.interruptToolCalls(id);
-          for (const child of this.agents(id)) {
-          const childRun = child.activeRunId; child.status = 'cancelled'; child.activeRunId = undefined; delete child.waitForAgentIds;
-          this.store.interruptToolCalls(child.id);
-          this.store.save(child); if (childRun) this.store.run(childRun, child.id, { status: 'cancelled', endedAt: Date.now() });
-          for (const request of this.store.requests(child.id).filter(r => r.status === 'pending')) this.store.request({ ...request, status: 'answered', answer: 'Parent quest canceled by the user.' });
-          for (const delivery of this.store.pendingDeliveries(child.id)) this.store.saveDelivery({ ...delivery, cancelledAt: Date.now() });
-          this.store.event(child.id, 'cancelled', 'Parent quest canceled by the user.');
-        }
-        }
+        this.store.save(q); this.store.event(id, 'accepted', 'You accepted this result.');
+        q = this.withAgentSummary(this.get(id));
         this.store.saveCommand(command.id, command.fingerprint, { quest: q });
       });
-      if (action === 'cancel') {
-        for (const child of this.agents(id)) { this.clearLive(child.id); this.stopWorker(child.id); this.changed(child.id); }
-        this.clearLive(id); this.stopWorker(id); this.wakeParents(); this.schedule();
-      }
       this.changed(id); return { quest: q };
+    });
+  }
+  private lifecycle(id: string, action: string, input: {commandId: string; expectedRunCount?: number; expectedClosedAt?: number; confirmCancel?: boolean}) {
+    return this.serialize(async () => {
+      const command = this.checkCommand(input.commandId, `${action}:${id}`, input);
+      if (command.cached) return command.cached;
+      let q = this.get(id);
+      const reopening = action === 'reopen' || action === 'restore';
+      const accepting = action === 'accept-close';
+      if (q.kind !== 'quest' && action !== 'cancel') throw new AppError('Only quests support this lifecycle action.',409);
+      if (input.expectedRunCount !== undefined && (!Number.isInteger(input.expectedRunCount) || input.expectedRunCount !== q.runCount)) throw new AppError('The quest result changed. Refresh before trying again.',409);
+      if ((accepting || action === 'reopen') && input.expectedRunCount === undefined) throw new AppError('expectedRunCount is required.');
+      if (reopening) {
+        if (action === 'reopen' && (input.expectedClosedAt === undefined || input.expectedClosedAt !== q.closedAt)) throw new AppError('The quest closure changed. Refresh before reopening.',409);
+        if (q.closedAt === undefined && q.archivedAt === undefined) {
+          if (action !== 'restore') throw new AppError('This quest is already open.',409);
+          this.store.transaction(() => {
+            q = this.withAgentSummary(this.get(id));
+            this.store.saveCommand(command.id,command.fingerprint,{quest:q});
+          });
+          return {quest:q};
+        }
+        const family = [q,...this.store.children(id)];
+        if (family.some(member => member.activeRunId || ['queued','running','waiting','awaiting_input'].includes(member.status))) throw new AppError('The quest family still has unfinished work.',409);
+        // No await: deletion and reopening use the same serialized mutation queue.
+        this.store.transaction(() => {
+          const reopenedAt = Math.max(Date.now(), (q.closedAt ?? 0) + 1);
+          delete q.closedAt; delete q.closeReason; delete q.archivedAt;
+          q.reopenedAt = reopenedAt; this.store.save(q);
+          this.store.event(id,action === 'restore' ? 'restored' : 'reopened','You reopened this quest. No work was started.');
+          q = this.withAgentSummary(this.get(id));
+          this.store.saveCommand(command.id, command.fingerprint, {quest:q});
+        });
+        this.changed(id); return {quest:q};
+      }
+      if (q.closedAt !== undefined || q.archivedAt !== undefined) throw new AppError('This quest is already closed.',409);
+      const runnable = (member: Quest) => !!member.activeRunId || ['queued','running','waiting','awaiting_input'].includes(member.status);
+      const initialFamily = [q,...this.store.children(id)];
+      const generations = new Map(initialFamily.map(member => [member.id, {runCount:member.runCount,result:member.result,status:member.status}]));
+      // Only final workers may be settled. Never stop active family work as a side
+      // effect of attempting acceptance. Keep every writer lock through actual exit.
+      if (accepting) {
+        if (!hasAcceptableResult(q) || initialFamily.some(runnable)) throw new AppError('Only a current saved result with no unfinished family work can be accepted.',409);
+        await Promise.all(initialFamily.map(member => this.settleWorker(member.id)));
+      }
+      q = this.get(id);
+      const family = [q,...this.store.children(id)];
+      if (q.closedAt !== undefined || q.archivedAt !== undefined || (accepting && (family.length !== generations.size || family.some(member => {
+        const generation = generations.get(member.id);
+        return !generation || member.runCount !== generation.runCount || member.result !== generation.result || member.status !== generation.status;
+      })))) throw new AppError('The quest result changed or the family changed. Refresh before accepting.',409);
+      const pending = family.flatMap(member => this.store.requests(member.id)).filter(r => r.status === 'pending');
+      const unfinished = this.familyPreparing(id) || family.some(runnable) || pending.length > 0 || family.some(member => this.store.pendingDeliveries(member.id).length);
+      if (accepting && (!hasAcceptableResult(q) || unfinished)) throw new AppError('Only a current saved result with no unfinished family work can be accepted.',409);
+      if (!accepting && unfinished && input.confirmCancel !== true && action !== 'cancel') throw new AppError('Confirm cancellation of lead/delegate work and dismissal of pending questions with confirmCancel: true.',409);
+      const now = Math.max(Date.now(), q.updatedAt + 1, (q.reopenedAt ?? 0) + 1);
+      this.store.transaction(() => {
+        if (q.kind === 'quest') { q.closedAt = now; q.closeReason = accepting ? 'accepted' : 'closed'; delete q.reopenedAt; }
+        if (accepting) {
+          q.status = 'accepted'; q.acceptance = {acceptedAt:now,runCount:q.runCount,...(q.result !== undefined ? {result:q.result} : {})};
+        } else for (const member of family) {
+          const runId = member.activeRunId;
+          if (runnable(member)) member.status = 'cancelled';
+          member.activeRunId = undefined; delete member.waitForAgentIds;
+          this.store.interruptToolCalls(member.id);
+          if (runId) this.store.run(runId,member.id,{status:'cancelled',endedAt:now});
+          for (const request of this.store.requests(member.id).filter(r => r.status === 'pending')) this.store.request({...request,status:'dismissed'});
+          for (const delivery of this.store.pendingDeliveries(member.id)) this.store.saveDelivery({...delivery,cancelledAt:now});
+          this.store.save(member);
+          if (member.id !== id) this.store.event(member.id,'closed','Parent quest closed; unfinished work cancelled and questions dismissed.');
+        }
+        this.store.save(q);
+        this.store.event(id,accepting ? 'accepted_closed' : q.kind === 'quest' ? 'closed' : 'cancelled',accepting ? 'You accepted this result and closed the quest.' : q.kind === 'quest' ? 'You closed this quest without accepting its result. Files and conversation remain saved.' : 'You stopped this turn. The conversation remains open.');
+        q = this.withAgentSummary(this.get(id));
+        this.store.saveCommand(command.id,command.fingerprint,{quest:q});
+      });
+      if (!accepting) for (const member of family) { this.clearLive(member.id); this.stopWorker(member.id); if (member.id !== id) this.changed(member.id); }
+      this.changed(id); this.schedule(); return {quest:q};
     });
   }
   async answer(id: string, input: { answer: unknown; images?: unknown; commandId: string }, delegated?: {parentId:string;agentId:string;expectedRunId?:string}) {

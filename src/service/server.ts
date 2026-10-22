@@ -153,7 +153,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         const controller=new AbortController();const onClose=()=>{if(!res.writableEnded)controller.abort();};res.on('close',onClose);
         try {const result=await connections.call(grant,input.tool,input.arguments,AbortSignal.any([run!.controller.signal,controller.signal]));active();service.inlineReads.toolBudget(run!.questId);json(res,200,result);}finally{res.off('close',onClose);}return;
       }
-      if (req.method === 'GET' && path === '/api/health') { json(res, 200, {ok:true,version:'0.1.0',dataDir,capabilities:{isolatedQuests:true,followupQuests:true,schedules:true}}); return; }
+      if (req.method === 'GET' && path === '/api/health') { json(res, 200, {ok:true,version:'0.1.0',dataDir,capabilities:{isolatedQuests:true,followupQuests:true,schedules:true,questLifecycle:true,questInbox:true}}); return; }
       if (req.method === 'GET' && path === '/api/bootstrap') {
         if (req.headers.authorization && !authorize(req).human) throw new AppError('Only the user can open the browser session.',403);
         res.setHeader('Set-Cookie', `guildmaster_token=${token}; HttpOnly; SameSite=Strict; Path=/`);
@@ -367,7 +367,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
           res.on('close', () => { clearInterval(timer); clients.delete(res); }); return;
         }
         if (req.method === 'GET' && path === '/api/quests') { const quests=service.board().quests; json(res,200,auth.human?quests:quests.map(questSummary)); return; }
-        const questPath = path.match(/^\/api\/quests\/([^/]+)(?:\/(continue|resume|accept|cancel|archive|restore))?$/);
+        const questPath = path.match(/^\/api\/quests\/([^/]+)(?:\/(continue|resume|accept|cancel|archive|restore|accept-close|close|reopen))?$/);
         if (req.method === 'GET' && questPath && !questPath[2]) {
           const detail=service.detail(questPath[1]);
           json(res,200,auth.human?detail:{quest:{...questSummary(detail.quest),result:detail.quest.result},requests:detail.requests.filter(r=>r.status==='pending')}); return;
@@ -401,7 +401,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
             if (q.kind !== 'quest' || !q.tools.every(t => auth.gm!.tools.includes(t)) || (!registeredProject && q.workspaceMode !== 'none' && (q.sourcePath ?? q.workspacePath) !== auth.gm.workspacePath)) throw new AppError('This quest is outside the current Guildmaster defaults.',403);
           }
           if (action === 'continue' || action === 'resume') { const updated=await service.continue(id,input as any,action === 'resume',auth.gm ? service.delegationSource(auth.gm) : undefined); json(res,200,auth.human?updated:{quest:questSummary(updated.quest!)}); }
-          else json(res,200,await service.action(id,action as 'accept'|'cancel'|'archive'|'restore',input as any));
+          else json(res,200,await service.action(id,action as 'accept'|'cancel'|'archive'|'restore'|'accept-close'|'close'|'reopen',input as any));
           return;
         }
         if (!auth.human) throw new AppError('Unsupported agent operation.',403);

@@ -124,6 +124,8 @@ test('canceling an undelivered instruction prevents its replay when the quest re
   await f.service().action(quest.id, 'cancel', { commandId: 'cancel' });
   assert.ok(f.store().deliveries(quest.id).find(item => item.id === pending.id)?.cancelledAt);
   await f.restart();
+  const closed = f.service().get(quest.id);
+  await f.service().action(quest.id, 'reopen', {commandId:'restore-visibility',expectedRunCount:closed.runCount,expectedClosedAt:closed.closedAt});
   await f.service().continue(quest.id, { message: 'Perform the revised task only.', commandId: 'reopen' });
   await f.state(quest.id, 'awaiting_review');
   assert.ok(!(await f.history(quest.id)).history.includes(abandoned));

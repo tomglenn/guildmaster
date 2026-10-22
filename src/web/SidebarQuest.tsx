@@ -21,6 +21,7 @@ type SidebarQuestData = {
   status: keyof typeof sidebarStatuses;
   project?: { name: string };
   queueReason?: string;
+  inbox?: { label: string; group: 'input' | 'attention' | 'working' };
 };
 
 export default function SidebarQuest({ quest, selected, onOpen }: {
@@ -28,7 +29,9 @@ export default function SidebarQuest({ quest, selected, onOpen }: {
   selected: boolean;
   onOpen: (id: string) => void;
 }) {
-  const status = sidebarStatuses[quest.status];
+  const base = sidebarStatuses[quest.status];
+  const reviewReady = quest.inbox?.label === 'Ready for review';
+  const status = quest.inbox ? { label: reviewReady ? 'Review' : quest.inbox.label, description: quest.inbox.label, icon: quest.inbox.group === 'input' ? 'chat' : reviewReady ? 'document' : quest.inbox.group === 'attention' ? 'alert' : base.icon } : base;
   const project = quest.project?.name || 'No saved project';
   const description = [status.description, quest.queueReason].filter(Boolean).join(': ');
   // No structured short title exists. Preserve distinguishing words and identifiers.

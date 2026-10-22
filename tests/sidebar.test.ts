@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 // Node strips types but not JSX. Load the actual components without a second renderer.
 const hooks = registerHooks({
   resolve(specifier, context, next) {
-    if (context.parentURL?.endsWith('/SidebarQuest.tsx') && specifier === './Icon') {
+    if ((context.parentURL?.endsWith('/SidebarQuest.tsx') || context.parentURL?.endsWith('/QuestAcceptButton.tsx')) && specifier === './Icon') {
       return next('./Icon.tsx', context);
     }
     return next(specifier, context);
@@ -25,6 +25,8 @@ const hooks = registerHooks({
   },
 });
 const { default: SidebarQuest, sidebarStatuses } = await import('../src/web/SidebarQuest.tsx');
+const { default: QuestAcceptButton } = await import('../src/web/QuestAcceptButton.tsx');
+const { default: ClosureToast } = await import('../src/web/ClosureToast.tsx');
 hooks.deregister();
 
 const quest = { id: 'q1', title: 'Incremental re-review Pathfinder #2138: recovery retries and distinguishing details', status: 'running' as const, project: { name: 'Pathfinder' } };
@@ -66,6 +68,53 @@ test('full title and project remain accessible without hover popups', () => {
   assert.match(missingProject, /Queued for execution: Waiting for workspace/);
 });
 
+test('authoritative family inbox label overrides lead execution status', () => {
+  const html = renderToStaticMarkup(React.createElement(SidebarQuest, { quest: { ...quest, status: 'accepted', inbox: { label: 'Agent needs input', group: 'input' } }, selected: false, onOpen() {} }));
+  assert.match(html, /Agent needs input/);
+  assert.doesNotMatch(html, />Accepted</);
+  assert.match(html, /aria-label="[^"‌]*Agent needs input/);
+  const reopened = renderToStaticMarkup(React.createElement(SidebarQuest, { quest: { ...quest, inbox: { label: 'Reopened', group: 'attention' } }, selected: false, onOpen() {} }));
+  assert.match(reopened, />Reopened</);
+});
+
+test('review uses the same colour across sidebar, cards and detail, with a document not a warning icon', () => {
+  const html = renderToStaticMarkup(React.createElement(SidebarQuest, { quest: { ...quest, status: 'awaiting_review', inbox: { label: 'Ready for review', group: 'attention' } }, selected: false, onOpen() {} }));
+  assert.match(html, />Review<\/span>/);
+  assert.match(html, /Ready for review/);
+  const legacy = render('awaiting_review');
+  const svg = (markup: string) => markup.match(/<svg[\s\S]*?<\/svg>/)?.[0];
+  assert.equal(svg(html), svg(legacy));
+  assert.notEqual(svg(html), svg(render('failed')));
+  const css = readFileSync(new URL('../src/web/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.recent-quest \.status-awaiting_review\{color:var\(--warning\)\}/);
+  assert.match(css, /\.badge\.status-awaiting_review[^}]*color:var\(--warning\)/);
+  assert.match(css, /\.quest-card\[data-status="awaiting_review"\]\{--quest-accent:var\(--warning\)/);
+});
+
+test('accept-close button uses explicit lifecycle semantics without hydration celebration', () => {
+  const html = renderToStaticMarkup(React.createElement(QuestAcceptButton, { disabled: false, onAccept: async () => {} }));
+  assert.match(html, /Accept &amp; close/);
+  assert.match(html, /Does not merge, publish, verify correctness, or delete files/);
+  assert.doesNotMatch(html, /accept-celebrate|is-accepted/);
+});
+
+test('closure confirmation stays at the top right near the quest actions', () => {
+  const css = readFileSync(new URL('../src/web/styles.css', import.meta.url), 'utf8');
+  const rule = css.match(/\.closure-toast\{([^}]+)\}/)?.[1] || '';
+  assert.match(rule, /position:fixed/);
+  assert.match(rule, /(?:^|;)top:24px(?:;|$)/);
+  assert.match(rule, /(?:^|;)right:24px(?:;|$)/);
+  assert.doesNotMatch(rule, /(?:^|;)bottom:/);
+});
+
+test('closure confirmation exposes accessible View/Undo and contextual conflict without starting work', () => {
+  const html = renderToStaticMarkup(React.createElement(ClosureToast, { notice: { quest: { id: 'q', runCount: 2, closedAt: 10, title: 'Review branch' }, message: 'Quest closed.', error: 'Could not reopen: newer closure' }, busy: false, onView() {}, onUndo() {}, onDismiss() {} }));
+  assert.match(html, /role="status" aria-live="polite"/);
+  assert.match(html, />View</);
+  assert.match(html, /aria-label="Undo close; return quest to inbox"/);
+  assert.match(html, /role="alert">Could not reopen: newer closure/);
+});
+
 test('sidebar keeps compact layout, background selection and keyboard focus without accent borders', () => {
   const css = readFileSync(new URL('../src/web/styles.css', import.meta.url), 'utf8');
   assert.match(css, /\.recent-quest-title\{[^}]*-webkit-line-clamp:2/);
@@ -76,7 +125,12 @@ test('sidebar keeps compact layout, background selection and keyboard focus with
   assert.match(css, /\.recent-quest:focus-visible\{outline-offset:-2px/);
   assert.match(css, /prefers-reduced-motion:reduce\)\{\.recent-quest\{transition:none/);
   const app = readFileSync(new URL('../src/web/App.tsx', import.meta.url), 'utf8');
-  assert.match(app, /currentQuests = quests.filter\(q => !q.archivedAt\)/);
+  assert.match(app, /currentQuests = inboxQuests\(quests\)/);
+  assert.doesNotMatch(app, /slice\(0, 12\)/);
+  assert.doesNotMatch(app, /inbox-group|inboxSection/);
+  assert.match(app, /currentQuests\.map\(q => <SidebarQuest/);
   assert.match(app, /currentQuests.length\} total/);
+  assert.match(app, /<span>Active quests<\/span>/);
+  assert.doesNotMatch(app, /<span>Your quests<\/span>|sidebarReview|className="nav-count"/);
   assert.doesNotMatch(app, /sidebarWorking|sidebarStatus/);
 });

@@ -49,7 +49,9 @@ test('active and interrupted occurrences block overlap, completed reports do not
  await assert.rejects(f.schedules().action(s.id,'run',{revision:s.revision,commandId:'overlap'}),/already active/);
  f.time('2026-10-19T07:30Z');await f.schedules().tick();assert.equal(f.store().occurrences(s.id)[0].state,'skipped');
  q.status='interrupted';f.store().save(q);f.time('2026-10-20T07:30Z');await f.schedules().tick();assert.equal(f.store().list().length,1);
- q.status='awaiting_review';q.activeRunId=undefined;f.store().save(q);f.time('2026-10-21T07:30Z');await f.schedules().tick();assert.equal(f.store().list().length,2);
+ q.status='awaiting_review';q.activeRunId=undefined;f.store().save(q);
+ for(const delivery of f.store().pendingDeliveries(q.id))f.store().saveDelivery({...delivery,deliveredAt:1});
+ f.time('2026-10-21T07:30Z');await f.schedules().tick();assert.equal(f.store().list().length,2);
 });
 
 test('pause, resume, edit, and delete preserve existing quests and reject stale edits',async t=>{
@@ -136,6 +138,36 @@ test('isolated occurrences use private checkouts and retain their scheduled mess
  f.time('2026-10-16T07:30Z');await f.schedules().tick();const q=f.store().list()[0];
  assert.equal(q.workspacePolicy,'isolated');assert.notEqual(q.workspacePath,repo);assert.equal(q.schedule!.id,s.id);
  assert.equal(f.store().messages(q.id)[0].source,'schedule');assert.equal(f.store().occurrences(s.id)[0].questId,q.id);
+});
+
+test('safely closed interrupted occurrence releases overlap without changing recurrence',async t=>{
+ const f=await fixture(t),s=(await f.schedules().save(f.config)).schedule;
+ f.time('2026-10-16T07:30Z');await f.schedules().tick();const q=f.store().list()[0];
+ q.status='interrupted';q.activeRunId=undefined;q.closedAt=1;q.closeReason='closed';f.store().save(q);
+ for(const delivery of f.store().pendingDeliveries(q.id))f.store().saveDelivery({...delivery,cancelledAt:1});
+ f.store().save({...q,id:'closed-child',kind:'delegate',parentQuestId:q.id,schedule:undefined});
+ assert.equal(f.schedules().list()[0].blockedBy,undefined);
+ assert.equal(f.schedules().get(s.id).enabled,true);
+ f.time('2026-10-19T07:30Z');await f.schedules().tick();
+ assert.equal(f.store().list().filter(item=>item.kind==='quest').length,2);
+ assert.equal(f.schedules().history(s.id).items.find(item=>item.questId===q.id)?.quest?.closedAt,1);
+});
+
+test('closed or cancelled occurrence never conceals child questions or active work from overlap checks',async t=>{
+ const f=await fixture(t),s=(await f.schedules().save(f.config)).schedule;
+ f.time('2026-10-16T07:30Z');await f.schedules().tick();const q=f.store().list()[0];
+ q.status='cancelled';q.activeRunId=undefined;q.closedAt=1;f.store().save(q);
+ for(const delivery of f.store().pendingDeliveries(q.id))f.store().saveDelivery({...delivery,cancelledAt:1});
+ const child={...q,id:'question-child',kind:'delegate' as const,parentQuestId:q.id,status:'failed' as const,schedule:undefined};f.store().save(child);
+ f.store().request({id:'pending',questId:child.id,runId:'r',question:'Continue?',status:'pending',createdAt:1});
+ assert.equal(f.schedules().list()[0].blockedBy?.id,q.id);
+ await assert.rejects(f.schedules().action(s.id,'run',{revision:s.revision,commandId:'question-overlap'}),/already active/);
+ f.store().request({...f.store().requests(child.id)[0],status:'dismissed'});
+ child.status='running' as never;f.store().save(child);
+ assert.equal(f.schedules().list()[0].blockedBy?.id,q.id);
+ child.status='failed';f.store().save(child);
+ f.store().request({id:'own-pending',questId:q.id,runId:'r',question:'Own question?',status:'pending',createdAt:1});
+ assert.equal(f.schedules().list()[0].blockedBy?.id,q.id);
 });
 
 test('stale preparation does not block the first due occurrence of an edited configuration',async t=>{

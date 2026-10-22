@@ -35,9 +35,12 @@ test('HTTP token separation, supervisor grants, mutation fence, resume persisten
   }
   assert.equal(app.store.list().filter(q=>q.kind==='quest').length,0);
   await app.service.action(q.id,'cancel',{commandId:'cancel-inline-main'});
+  assert.equal(app.service.get(q.id).closedAt,undefined,'Guildmaster cancellation stops only the turn');
   assert.equal((await request('/api/agent/inline-read',spec.inlineToken,input)).status,403);
   assert.equal((await request('/api/agent/images/generate',spec.imageToken,{})).status,403,'cancellation revokes image authority too');
-  assert.equal((await request('/api/quests',spec.serviceToken,{objective:'stale',commandId:'stale'})).status,403);
+  // IPC exit may remove the token before this HTTP request; both revoked (401)
+  // and retained-but-fenced (403) credentials must deny the stale mutation.
+  assert.ok([401,403].includes((await request('/api/quests',spec.serviceToken,{objective:'stale',commandId:'stale'})).status));
   const interrupted=app.service.get(q.id);interrupted.status='interrupted';app.store.save(interrupted);
   const resumed=(await app.service.continue(q.id,{commandId:'resume-inline-main'},true)).quest!;
   const resumeSpec=JSON.parse(await readFile(join(dir,'runs',resumed.activeRunId+'.json'),'utf8'));

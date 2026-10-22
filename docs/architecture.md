@@ -13,7 +13,7 @@ Guildmaster is one TypeScript package with a React frontend, a local HTTP servic
 | `src/service/store.ts` | SQLite records and transactions. |
 | `src/service/projects.ts`, `isolated-workspaces.ts` | Repository registration, revision selection, and workspace preparation. |
 | `src/service/schedules.ts` | Recurring tasks, saved occurrences, and dispatch. |
-| `src/service/archive-storage.ts`, `quest-files.ts` | Archived quest deletion and access to report files. |
+| `src/service/archive-storage.ts`, `quest-files.ts` | Closed quest deletion, retention, and access to report files. |
 | `src/domain/` | Shared records, image limits, and timezone recurrence calculations. |
 | `src/worker.ts` | Agent process entry point and engine event handling. |
 | `src/engine/` | Pi sessions, instruction delivery, model settings, guidance, and agent tools. |
@@ -43,7 +43,11 @@ A lead can yield through `wait_for_agents`. The service saves its wait targets, 
 
 Delegate questions go to their lead. Human questions appear in the quest conversation and use the main composer for answers. Pending questions survive service restarts.
 
-A completed lead turn produces a result for review. Only the user accepts the quest. Outstanding delegate work can delay the lead's final result.
+A completed lead turn produces a result for review. Only the user selects **Accept & close**, recording acceptance of that result and closure atomically with events and the command response. Outstanding delegate work can delay the lead's final result. Acceptance is not verification, publication, file deletion, or process cleanup.
+
+The sidebar is a family-aware attention inbox: pending lead or delegate questions remain visible even if a saved status is terminal. **Close** dismisses without endorsing success. Active work and pending questions require explicit confirmation of family cancellation and question dismissal. Dismissed questions are not answered or approved. Closed work lives in board **History**, labeled **Accepted** or **Closed**; historical errors remain context, not a separate Stopped outcome.
+
+Closure (`closedAt`) starts the automatic-deletion clock when storage retention is enabled. An already enabled policy keeps its retention period and applies immediately to all closed quests, including old closures. Cleanup uses full-family activity, preparation, pending-work, and storage-ownership checks; safely closed failed and interrupted quests are eligible. **Reopen** and **Undo** clear closure and exclude the quest from retention without starting workers or replaying instructions; closing again starts a new clock. Reopening and deletion use the same serialized queue. The idle label is **Reopened** until a follow-up starts; prior acceptance is historical, not approval of a new run. Closure/run generation checks prevent stale reopening from overwriting newer work.
 
 Follow-up quest creation requires an explicit direct user request. Inherited briefs, tool results, and scheduled instructions cannot supply that authorization. The service checks message provenance before creation.
 
@@ -85,7 +89,9 @@ Isolated workspaces receive private copies of local skill bundles. Required tool
 
 Schedules store instructions for future quests. Each occurrence saves a settings snapshot and a stable identity before quest creation.
 
-Dispatch runs at startup and every 15 seconds. A schedule cannot overlap an active, queued, waiting, awaiting-input, or interrupted occurrence. Results awaiting review do not block the next run.
+Dispatch runs at startup and every 15 seconds. A schedule cannot overlap an active, queued, waiting, awaiting-input, or open interrupted occurrence. Family pending questions, pending deliveries, live workers, and workspace preparation also block overlap, regardless of closure or parent status. Results awaiting review do not block the next run when the family is settled. Safely closed interrupted families release their recovery blocker.
+
+Closing an occurrence does not pause, edit, or delete its recurrence. Retained occurrences, including closed quests, remain linked from schedule history; permanent deletion preserves the occurrence record without its quest.
 
 The default missed-run policy starts only the latest missed occurrence. The skip policy ignores occurrences more than one minute late. Pausing does not accumulate missed work.
 

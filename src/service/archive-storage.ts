@@ -13,7 +13,7 @@ const within=(root:string,path:string)=>path===root||path.startsWith(root+sep);
 type Policy={retentionDays:number|null;lastCleanupAt?:number;lastDeleted?:number;lastError?:string};
 type BatchResult={deleted:string[];failed:{id:string;error:string}[]};
 
-/** Files are removed before records. A failed cleanup retains the archived record for retry. */
+/** Files are removed before records. A failed cleanup retains the closed record for retry. */
 export class ArchiveStorage {
   private timer?:ReturnType<typeof setInterval>;
   private cleaning?:Promise<BatchResult>;
@@ -23,7 +23,7 @@ export class ArchiveStorage {
   constructor(service:QuestService){this.service=service;}
   view() {
     const policy=this.service.store.setting<Policy>('storage')??{retentionDays:null};
-    return {...policy,lastError:this.cleanupError??policy.lastError,archivedQuests:this.service.store.list().filter(q=>q.kind==='quest'&&q.archivedAt!==undefined).length};
+    return {...policy,lastError:this.cleanupError??policy.lastError,closedQuests:this.service.store.list().filter(q=>q.kind==='quest'&&q.closedAt!==undefined).length};
   }
   start() {
     const cleanup=()=>{void this.cleanExpired().catch(()=>{this.cleanupError='Automatic cleanup could not finish. It will retry while Guildmaster is running.';});};
@@ -40,23 +40,23 @@ export class ArchiveStorage {
     this.cleaning=(async()=>{
       const result:BatchResult={deleted:[],failed:[]};this.cleanupError=undefined;
       const policy=this.view();if(this.stopped||policy.retentionDays===null)return result;
-      const ids=this.service.store.list().filter(q=>q.kind==='quest'&&q.archivedAt!==undefined&&q.archivedAt<=now-policy.retentionDays!*DAY).map(q=>q.id);
+      const ids=this.service.store.list().filter(q=>q.kind==='quest'&&q.closedAt!==undefined&&q.closedAt<=now-policy.retentionDays!*DAY).map(q=>q.id);
       for(const id of ids) {
         if(this.stopped)break;
         // Recheck age and policy inside the same queue used by restore/continue.
         try {const removed=await this.service.serialize(async()=>{
           const current=this.view();const q=this.service.store.get(id);
-          if(current.retentionDays===null||!q||q.archivedAt===undefined||q.archivedAt>now-current.retentionDays*DAY)return false;
+          if(current.retentionDays===null||!q||q.closedAt===undefined||q.closedAt>now-current.retentionDays*DAY)return false;
           await this.remove(id);return true;
         });if(removed)result.deleted.push(id);}catch(error){result.failed.push({id,error:(error as Error).message});}
       }
-      this.service.store.saveSetting('storage',{...this.view(),lastCleanupAt:now,lastDeleted:result.deleted.length,lastError:result.failed.length?'Some archived quests could not be deleted. They remain archived and cleanup will retry.':undefined});
+      this.service.store.saveSetting('storage',{...this.view(),lastCleanupAt:now,lastDeleted:result.deleted.length,lastError:result.failed.length?'Some closed quests could not be deleted. Their records were kept and cleanup will retry.':undefined});
       return result;
     })().finally(()=>{this.cleaning=undefined;});
     return this.cleaning;
   }
   async delete(ids:unknown):Promise<BatchResult> {
-    if(!Array.isArray(ids)||!ids.length||ids.length>100||ids.some(id=>typeof id!=='string'||!segment(id)))throw new AppError('Select between 1 and 100 archived quests.');
+    if(!Array.isArray(ids)||!ids.length||ids.length>100||ids.some(id=>typeof id!=='string'||!segment(id)))throw new AppError('Select between 1 and 100 closed quests.');
     const result:BatchResult={deleted:[],failed:[]};
     for(const id of new Set<string>(ids)) {
       try {await this.service.serialize(()=>this.remove(id));result.deleted.push(id);}catch(error){result.failed.push({id,error:(error as Error).message});}
@@ -66,16 +66,25 @@ export class ArchiveStorage {
   private async remove(id:string) {
     const {store,dataDir}=this.service;const q=store.get(id);
     if(!q)return; // Repeated deletion is harmless.
-    if(q.kind!=='quest'||q.archivedAt===undefined||!['accepted','cancelled'].includes(q.status))throw new AppError('Only archived quests can be permanently deleted.',409);
+    const eligible=(item:Quest)=>item.kind==='quest'&&item.closedAt!==undefined;
+    if(!eligible(q))throw new AppError('Only closed quests can be permanently deleted.',409);
     const all=store.list();const family=all.filter(item=>item.id===id||item.parentQuestId===id);
-    if(family.some(item=>this.service.live.has(item.id)||item.activeRunId||['queued','running','waiting','awaiting_input'].includes(item.status)))throw new AppError('This quest still has active work. Wait for it to finish stopping before deleting it.',409);
+    const generation=JSON.stringify(family);
+    const assertSettled=()=>{
+      const current=store.get(id);
+      const members=store.list().filter(item=>item.id===id||item.parentQuestId===id);
+      if(!current||!eligible(current)||JSON.stringify(members)!==generation)throw new AppError('This quest changed during cleanup. Its saved record was kept; reload before deleting it.',409);
+      if(this.service.familyPreparing(id)||members.some(item=>this.service.live.has(item.id)||item.activeRunId||['queued','running','waiting','awaiting_input'].includes(item.status)))throw new AppError('This quest still has active work. Wait for it to finish stopping before deleting it.',409);
+      if(members.some(item=>store.requests(item.id).some(request=>request.status==='pending')||store.pendingDeliveries(item.id).length))throw new AppError('This quest still has pending questions or instructions. Close it and dismiss outstanding work before deleting it.',409);
+    };
+    assertSettled();
     const familyIds=new Set(family.map(item=>item.id));const others=all.filter(item=>!familyIds.has(item.id));
     const root=await realpath(dataDir);
     const prefixes=[resolve(dataDir)];
     const aliases=store.setting<unknown>('storage.pathAliases') ?? [];
-    if(!Array.isArray(aliases))throw new AppError('The saved storage aliases are invalid. The archived quest was kept.',409);
+    if(!Array.isArray(aliases))throw new AppError('The saved storage aliases are invalid. The quest record was kept.',409);
     for(const alias of aliases) {
-      if(typeof alias!=='string'||!isAbsolute(alias)||await realpath(alias).catch(()=>undefined)!==root||!(await lstat(alias)).isSymbolicLink())throw new AppError('A storage compatibility link is missing or changed. Restore it before deleting archived quests.',409);
+      if(typeof alias!=='string'||!isAbsolute(alias)||await realpath(alias).catch(()=>undefined)!==root||!(await lstat(alias)).isSymbolicLink())throw new AppError('A storage compatibility link is missing or changed. Restore it before deleting quests.',409);
       prefixes.push(resolve(alias));
     }
     const normalized=(path:string)=>{const value=resolve(path);const prefix=prefixes.find(prefix=>within(prefix,value));return prefix?join(root,relative(prefix,value)):value;};
@@ -84,10 +93,10 @@ export class ArchiveStorage {
       let current=root;
       for(const part of relative(root,target).split(sep)) {
         current=join(current,part);
-        try {if((await lstat(current)).isSymbolicLink())throw new AppError('Cleanup found a symbolic link in a storage path. The archived quest was kept.',409);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}
+        try {if((await lstat(current)).isSymbolicLink())throw new AppError('Cleanup found a symbolic link in a storage path. The quest record was kept.',409);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}
       }
     };
-    const readJson=async(path:string)=>{await safe(path);try{const info=await lstat(path);if(info.size>8_000_000)throw new AppError('A cleanup record is too large. The archived quest was kept.',409);return JSON.parse(await readFile(path,'utf8'));}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}};
+    const readJson=async(path:string)=>{await safe(path);try{const info=await lstat(path);if(info.size>8_000_000)throw new AppError('A cleanup record is too large. The quest record was kept.',409);return JSON.parse(await readFile(path,'utf8'));}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}};
     const paths=(value:unknown):string[]=>{
       if(typeof value==='string')return isAbsolute(value)?[normalized(value)]:[];
       if(!value||typeof value!=='object')return [];
@@ -97,7 +106,7 @@ export class ArchiveStorage {
       const references=(value:any)=>Object.fromEntries(['workspaceMode','workspacePath','sourcePath','sessionPath','outputPath','guidancePath','guidanceRevision','workspaces','preparedWorkspaces'].map(key=>[key,value[key]]));
       const rows:unknown[]=quests.map(references);
       for(const item of quests)for(const run of store.runs(item.id)) {
-        if(!segment(run.id))throw new AppError('Invalid saved run path. The archived quest was kept.',409);
+        if(!segment(run.id))throw new AppError('Invalid saved run path. The quest record was kept.',409);
         const spec=await readJson(join(root,'runs',run.id+'.json'));if(spec)rows.push(references(spec));
       }
       return rows;
@@ -138,8 +147,8 @@ export class ArchiveStorage {
       const folder=join(root,'isolated',generation);
       if(protectedPath(folder)||retainedRevisions.has(generation))continue;
       const record=await readJson(join(folder,'preparation.json'));
-      if(!record){try{await lstat(folder);throw new AppError('An isolated workspace is missing its ownership record. The archived quest was kept.',409);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
-      if(record&&(record.generation!==generation||record.state!=='ready'||!Array.isArray(record.workspaces)))throw new AppError('An isolated workspace has an incomplete cleanup record. The archived quest was kept.',409);
+      if(!record){try{await lstat(folder);throw new AppError('An isolated workspace is missing its ownership record. The quest record was kept.',409);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
+      if(record&&(record.generation!==generation||record.state!=='ready'||!Array.isArray(record.workspaces)))throw new AppError('An isolated workspace has an incomplete cleanup record. The quest record was kept.',409);
       for(const workspace of record?.workspaces??[]) {
         if(workspace.mode!=='worktree')continue;
         if(typeof workspace.workspacePath!=='string'||typeof workspace.sourcePath!=='string')throw new AppError('Invalid isolated workspace ownership record.',409);
@@ -152,22 +161,25 @@ export class ArchiveStorage {
     for(const revision of revisions)if(!retainedRevisions.has(revision))files.add(join(root,'guidance',revision+'.json'));
     for(const item of family) {
       const folder=join(root,'worktrees',item.id);await safe(folder);
-      if(await lstat(folder).then(()=>true,error=>{if(error.code==='ENOENT')return false;throw error;})&&![...worktrees.keys()].some(path=>within(folder,path)))throw new AppError('A worktree folder is missing its ownership record. The archived quest was kept.',409);
+      if(await lstat(folder).then(()=>true,error=>{if(error.code==='ENOENT')return false;throw error;})&&![...worktrees.keys()].some(path=>within(folder,path)))throw new AppError('A worktree folder is missing its ownership record. The quest record was kept.',409);
     }
     // Validate the entire plan before removing anything. Never follow symlinked storage roots.
     for(const path of [...folders,...files,...worktrees.keys()])await safe(path);
     for(const [path,source] of worktrees) {
       try {await lstat(path);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')continue;throw error;}
       const {stdout}=await exec('git',['worktree','list','--porcelain','-z'],{cwd:source,timeout:10000});
-      if(!stdout.split('\0').some(line=>line.startsWith('worktree ')&&normalized(line.slice(9))===path))throw new AppError('A saved worktree no longer matches its repository. The archived quest was kept.',409);
+      if(!stdout.split('\0').some(line=>line.startsWith('worktree ')&&normalized(line.slice(9))===path))throw new AppError('A saved worktree no longer matches its repository. The quest record was kept.',409);
     }
+    // Filesystem planning awaits must not let a new family member, question, or
+    // workspace preparation slip past the initial eligibility check.
+    assertSettled();
     for(const [path,source] of worktrees) {
       try{await lstat(path);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')continue;throw error;}
-      await gitMutation(source,()=>exec('git',['-c','core.hooksPath=/dev/null','worktree','remove','--force',path],{cwd:source,timeout:30000}));
+      await gitMutation(source,()=>{assertSettled();return exec('git',['-c','core.hooksPath=/dev/null','worktree','remove','--force',path],{cwd:source,timeout:30000});});
     }
-    for(const path of folders)await rm(path,{recursive:true,force:true});
-    for(const path of files)await rm(path,{force:true});
-    store.deleteQuestRecords([...familyIds]);
+    for(const path of folders){assertSettled();await rm(path,{recursive:true,force:true});}
+    for(const path of files){assertSettled();await rm(path,{force:true});}
+    assertSettled();store.deleteQuestRecords([...familyIds]);
     for(const item of family)this.service.partialMessages.delete(item.id);
     this.service.changed(id);
   }

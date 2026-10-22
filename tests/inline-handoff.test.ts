@@ -36,6 +36,7 @@ test('handoff copies only the original request, defaults and scope; retries/resu
   assert.equal(app.store.projects().length,0);assert.equal(app.store.requests(gm.id).length,0);
   assert.equal((await post('/api/quests',spec.serviceToken,{objective:'injected',commandId:'injected'})).status,403);
   await app.service.action(gm.id,'cancel',{commandId:'cancel'});
+  assert.equal(app.service.get(gm.id).closedAt,undefined,'stopping Guildmaster leaves its conversation open');
   assert.equal((await post(route,spec.serviceToken,{commandId:'stale'})).status,403);
   const stopped=app.service.get(gm.id);stopped.status='interrupted';app.store.save(stopped);
   app.service.inlineReads=new InlineReads(app.store); // No in-memory handoff identity survives.
@@ -80,6 +81,7 @@ test('unresolved scope cannot create a ghost quest',async t=>{
   await assert.rejects(app.service.delegateRequest(gm.id,gm.activeRunId!,{commandId:'handoff'}),/one exact GitHub URL or one registered repository/);
   assert.equal(app.store.list().filter(q=>q.kind==='quest').length,0);
   await app.service.action(gm.id,'cancel',{commandId:'cancel'});
+  assert.equal(app.service.get(gm.id).closedAt,undefined);
   const fresh=(await app.service.guildmaster({message:'[wait] Investigate https://github.com/example/repo/issues/42',commandId:'fresh'})).quest;
   const runId=fresh.activeRunId!;
   await app.service.action(fresh.id,'cancel',{commandId:'cancel-fresh'});

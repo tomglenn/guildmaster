@@ -1,4 +1,4 @@
-export type TranscriptRequest = { id: string; question: string; status: 'pending' | 'answered'; createdAt: string | number; answer?: string; answerMessageId?: string };
+export type TranscriptRequest = { id: string; question: string; status: 'pending' | 'answered' | 'dismissed'; createdAt: string | number; answer?: string; answerMessageId?: string };
 export type TranscriptMessage = { attachments?: import('../domain/images').ImageAttachment[]; source?: 'user' | 'guildmaster' | 'quest_lead' | 'schedule' | 'system'; displayText?: string; id: string; role: 'user' | 'assistant' | 'system'; text: string; createdAt: string | number; request?: TranscriptRequest; answerFor?: string };
 export type LiveMessage = { runId: string; messageId: string; text: string };
 export type ToolCall = { id: string; runId: string; tool: string; detail: string; status: 'running' | 'completed' | 'failed' | 'interrupted'; startedAt: number; endedAt?: number; output?: string };

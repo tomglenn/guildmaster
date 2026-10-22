@@ -19,12 +19,15 @@ export interface ContextUsage { tokens: number | null; contextWindow: number; pe
 export interface Quest {
   id: string; title: string; objective: string; kind: 'quest' | 'guildmaster' | 'delegate'; status: Status;
   workspaceMode: WorkspaceMode; workspacePath: string; sourcePath?: string; branch?: string;
-  model: string; tools: string[]; instructions: string; createdAt: number; updatedAt: number;
+  model: string; tools: string[]; instructions: string; createdAt: number; updatedAt: number; statusChangedAt?: number;
   sessionPath: string; error?: string; result?: string; runCount: number; activeRunId?: string;
   contextUsage?: ContextUsage;
   guidanceRevision?: string; sessionStartRun?: number; sessionEstablished?: boolean;
   schedule?: import('./schedules.ts').ScheduleOrigin;
   sourceRequest?: DelegationSource; archivedAt?: number;
+  closedAt?: number; closeReason?: 'accepted' | 'closed' | 'legacy'; reopenedAt?: number;
+  acceptance?: { acceptedAt: number; runCount: number; result?: string };
+  inbox?: { included: boolean; group: 'input' | 'attention' | 'working'; label: string; since: number; pendingQuestions: number; active: number };
   project?: ProjectSnapshot; workspaces?: QuestWorkspace[];
   workspacePolicy?: WorkspacePolicy;
   preparedWorkspaces?: PreparedWorkspace[]; isolation?: IsolationRequest[]; outputPath?: string;
@@ -41,7 +44,7 @@ export interface ToolCall {
   status: 'running' | 'completed' | 'failed' | 'interrupted'; startedAt: number; endedAt?: number; output?: string;
 }
 export interface Activity { id: number; questId: string; type: string; detail: string; createdAt: number }
-export interface Request { id: string; questId: string; runId: string; toolCallId?: string; question: string; status: 'pending' | 'answered'; answer?: string; answerMessageId?: string; createdAt: number }
+export interface Request { id: string; questId: string; runId: string; toolCallId?: string; question: string; status: 'pending' | 'answered' | 'dismissed'; answer?: string; answerMessageId?: string; createdAt: number }
 export interface CreateQuest {
   images?: import('./images.ts').ImageUpload[];
   workspacePolicy?: WorkspacePolicy; revisions?: IsolationRequest[];

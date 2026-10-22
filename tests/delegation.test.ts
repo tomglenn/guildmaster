@@ -386,5 +386,6 @@ test('an unresolved delegate question cannot silently finish or indefinitely sus
   assert.match((await f.history(leader.id)).history.at(-1)!,/Your delegates need your input/);
   await f.service().action(leader.id,'cancel',{commandId:'cancel-unresolved'});
   assert.equal(f.service().get(child.id).status,'cancelled');
-  assert.equal(f.store().requests(child.id)[0].status,'answered');
+  assert.equal(f.store().requests(child.id)[0].status,'dismissed');
+  assert.equal(f.store().requests(child.id)[0].answer,undefined);
 });

@@ -41,7 +41,7 @@ Slack is optional. Connect it through **Settings → Connections**. See [Slack s
 
 ## Day to day
 
-The **Quest board** holds your tasks. Open a quest to read its result, answer a question, or send feedback. When you are satisfied, select **Accept**. Archive the quest to clear the board.
+The sidebar is your attention inbox. Open a quest to read its result, answer a question, or send feedback. When satisfied, select **Accept & close**; **Close** dismisses work without endorsing success. Retained quests appear in **Quest board → History** as **Accepted** or **Closed**. **Reopen** returns a quest to the inbox without starting work. Closing retains files, but starts the retention clock if automatic deletion is enabled. Existing enabled policies apply to all closed quests, including old closures. Reopening excludes the quest; closing it again starts a new clock.
 
 The **Schedules** page holds recurring task instructions. Each run creates a normal quest. Schedules run while the service is running and your computer is awake.
 
@@ -68,7 +68,7 @@ Guildmaster is an early local application. Use it with projects and accounts you
 - [Development](docs/development.md): hot reload, updates, tests, and troubleshooting.
 - [Architecture](docs/architecture.md): the code map, quest lifecycle, and service boundaries.
 - [Connections](docs/connections.md): Slack access and credentials.
-- [Storage](docs/storage.md): saved data, backups, and archived quest cleanup.
+- [Storage](docs/storage.md): saved data, backups, permanent deletion, and closed-quest retention.
 
 For bugs, include reproduction steps and your Node.js version. Remove credentials, private conversations, and company information from logs or screenshots before sharing them.
 

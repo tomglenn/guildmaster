@@ -19,7 +19,14 @@ export class SchedulesService {
   get(id: string) {const value=this.store.schedule(id);if(!value)throw new AppError('Schedule not found.',404);return value;}
   private blocker(id: string) {
     const quests=this.store.list();
-    return quests.find(q=>q.schedule?.id===id && (blocking.has(q.status) || (q.status!=='cancelled' && quests.some(agent=>agent.parentQuestId===q.id && blocking.has(agent.status)))));
+    return quests.find(q=>{
+      if(q.schedule?.id!==id||q.kind!=='quest')return false;
+      const family=quests.filter(item=>item.id===q.id||item.parentQuestId===q.id);
+      // Closure only releases abandoned interruption recovery, never live work
+      // or unanswered questions (including inconsistent legacy families).
+      if(this.service.familyPreparing(q.id)||family.some(item=>this.service.live.has(item.id)||item.activeRunId||this.store.requests(item.id).some(request=>request.status==='pending')||this.store.pendingDeliveries(item.id).length))return true;
+      return family.some(item=>blocking.has(item.status)&&!(item.status==='interrupted'&&q.closedAt!==undefined));
+    });
   }
   list() {return this.store.schedules().map(schedule=>({
     ...schedule, blockedBy:this.blocker(schedule.id), latest:this.history(schedule.id,0,1).items[0],
@@ -76,7 +83,7 @@ export class SchedulesService {
       const schedule={...previous};
       if(action==='run') {
         const active=this.blocker(id);
-        if(active||this.store.preparingOccurrences(id).length>0)throw new AppError('An occurrence is already active. Finish or cancel it before starting another.',409);
+        if(active||this.store.preparingOccurrences(id).length>0)throw new AppError('An occurrence is already active. Finish or close it before starting another.',409);
         occurrence={id:randomUUID(),scheduleId:id,config:schedule,scheduledAt:this.now(),createdAt:this.now(),trigger:'manual',state:'preparing'};
       } else {schedule.revision++;schedule.updatedAt=this.now();schedule.enabled=action==='resume';if(action==='resume')schedule.nextAt=nextOccurrence(schedule.recurrence,this.now());}
       const result=occurrence?{occurrence}:{schedule:action==='delete'?null:schedule};

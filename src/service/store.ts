@@ -39,6 +39,20 @@ export class Store {
       CREATE INDEX IF NOT EXISTS deliveries_quest ON deliveries(questId);
       CREATE INDEX IF NOT EXISTS quests_parent ON quests(json_extract(data,'$.parentQuestId'));
     `);
+    // Normalize historical finished records into History once. Their close date
+    // is also the retention date; never re-close a subsequently reopened quest.
+    if (!this.setting('questLifecycleV1')) this.transaction(() => {
+      const all = this.list();
+      for (const q of all.filter(q => q.kind === 'quest' && q.closedAt === undefined)) {
+        const family = [q, ...all.filter(child => child.parentQuestId === q.id)];
+        const unsafe = family.some(member => member.activeRunId || ['queued','running','awaiting_input','waiting'].includes(member.status) || this.requests(member.id).some(r => r.status === 'pending') || this.pendingDeliveries(member.id).length);
+        if (q.archivedAt !== undefined || (!unsafe && ['accepted','cancelled'].includes(q.status))) {
+          q.closedAt = q.archivedAt ?? q.updatedAt; q.closeReason = 'legacy';
+          this.db.prepare('UPDATE quests SET data=? WHERE id=?').run(JSON.stringify(q), q.id);
+        }
+      }
+      this.saveSetting('questLifecycleV1', true);
+    });
     // Remove retired registry preferences without changing saved quest workspaces.
     this.transaction(() => {
       for (const row of this.db.prepare('SELECT id, data FROM projects').all() as { id: string; data: string }[]) {
@@ -66,7 +80,16 @@ export class Store {
     return row ? JSON.parse(row.data) : undefined;
   }
   saveProject(project: Project) { this.db.prepare('INSERT OR REPLACE INTO projects VALUES (?,?)').run(project.id, JSON.stringify(project)); }
-  save(q: Quest) { q.updatedAt = Date.now(); this.db.prepare('INSERT OR REPLACE INTO quests VALUES (?,?)').run(q.id, JSON.stringify(q)); }
+  save(q: Quest) {
+    const previous = this.get(q.id);
+    const now = Date.now();
+    // Activity, tool output and token updates must not reorder the attention inbox.
+    q.statusChangedAt = previous && previous.status === q.status
+      ? previous.statusChangedAt ?? previous.updatedAt
+      : now;
+    q.updatedAt = now;
+    this.db.prepare('INSERT OR REPLACE INTO quests VALUES (?,?)').run(q.id, JSON.stringify(q));
+  }
   message(questId: string, role: Message['role'], text: string, id: string = randomUUID(), presentation?: MessagePresentation) {
     const m: Message = { id, questId, role, text, createdAt: Date.now(), ...(role === 'user' ? { source: 'user' as const } : {}), ...presentation };
     this.db.prepare('INSERT OR IGNORE INTO messages VALUES (?,?,?)').run(m.id, questId, JSON.stringify(m)); return m;
@@ -100,6 +123,10 @@ export class Store {
   events(id: string): Activity[] { return this.db.prepare('SELECT * FROM events WHERE questId=? ORDER BY id DESC LIMIT 300').all(id).reverse() as unknown as Activity[]; }
   request(r: Request) { this.db.prepare('INSERT OR REPLACE INTO requests VALUES (?,?,?)').run(r.id, r.questId, JSON.stringify(r)); }
   getRequest(id: string): Request | undefined { const r = this.db.prepare('SELECT data FROM requests WHERE id=?').get(id) as {data: string} | undefined; return r ? JSON.parse(r.data) : undefined; }
+  pendingRequestSummary(): Map<string, {count: number; since: number}> {
+    const rows = this.db.prepare("SELECT questId, count(*) AS count, min(json_extract(data,'$.createdAt')) AS since FROM requests WHERE json_extract(data,'$.status')='pending' GROUP BY questId").all() as {questId: string; count: number; since: number}[];
+    return new Map(rows.map(row => [row.questId, {count: row.count, since: row.since}]));
+  }
   requests(id: string): Request[] { return (this.db.prepare('SELECT data FROM requests WHERE questId=? ORDER BY rowid').all(id) as {data: string}[]).map(r => JSON.parse(r.data)); }
   command(id: string): {fingerprint: string; response: unknown} | undefined { const r = this.db.prepare('SELECT fingerprint,response FROM commands WHERE id=?').get(id) as {fingerprint: string;response: string} | undefined; if (!r) return; const response=JSON.parse(r.response); if(response?.permanentlyDeleted)throw new AppError('This command refers to a permanently deleted quest.',410); return {...r,response}; }
   saveCommand(id: string, fingerprint: string, response: unknown) { this.db.prepare('INSERT INTO commands VALUES (?,?,?)').run(id, fingerprint, JSON.stringify(response)); }

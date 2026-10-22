@@ -17,20 +17,20 @@ async function fixture(t:TestContext) {
   const root=await realpath(await mkdtemp(join(tmpdir(),'guildmaster-delete-')));const data=join(root,'data');
   const store=new Store(data);const service=new QuestService({store,dataDir:data});const storage=new ArchiveStorage(service);
   t.after(async()=>{await storage.close();await service.close();store.close();await rm(root,{recursive:true,force:true});});
-  const quest=(id:string,extra:Partial<Quest>={}):Quest=>{const q:Quest={id,title:id,objective:'Example assignment',kind:'quest',status:'accepted',workspaceMode:'none',workspacePath:join(data,'workspaces',id),sessionPath:join(data,'sessions',id,'session.jsonl'),model:'fixture/model',tools:[],instructions:'',runCount:1,createdAt:1,updatedAt:1,archivedAt:Date.now(),...extra};store.save(q);return q;};
+  const quest=(id:string,extra:Partial<Quest>={}):Quest=>{const q:Quest={id,title:id,objective:'Example assignment',kind:'quest',status:'accepted',workspaceMode:'none',workspacePath:join(data,'workspaces',id),sessionPath:join(data,'sessions',id,'session.jsonl'),model:'fixture/model',tools:[],instructions:'',runCount:1,createdAt:1,updatedAt:1,closedAt:Date.now(),...extra};store.save(q);return q;};
   async function file(path:string,text='saved content'){await mkdir(join(path,'..'),{recursive:true});await writeFile(path,text);}
   async function repo(){const path=join(root,'source');await mkdir(path);await exec('git',['init','-q'],{cwd:path});await exec('git',['-c','user.name=Fixture','-c','user.email=fixture@example.com','commit','--allow-empty','-qm','Initial'],{cwd:path});return path;}
   return {root,data,store,service,storage,quest,file,repo};
 }
 
-test('deletion removes the archived family, private files, and cached payloads; retries cannot resurrect it',async t=>{
+test('deletion removes the closed family, private files, and cached payloads; retries cannot resurrect it',async t=>{
   const f=await fixture(t);const q=f.quest('parent');const child=f.quest('child',{kind:'delegate',parentQuestId:q.id,status:'completed',archivedAt:undefined});const keep=f.quest('keep');
   for(const item of [q,child]) {
     f.store.message(item.id,'assistant','private report');f.store.event(item.id,'result','private event');
     f.store.run('run-'+item.id,item.id,{prompt:'private instructions'});
     f.store.saveToolCall({id:'tool-'+item.id,questId:item.id,runId:'run-'+item.id,tool:'read',detail:'private detail',status:'completed',startedAt:1});
     f.store.request({id:'request-'+item.id,questId:item.id,runId:'run-'+item.id,question:'private question',status:'answered',createdAt:1});
-    f.store.saveDelivery({id:'delivery-'+item.id,questId:item.id,commandId:'command',kind:'prompt',text:'private delivery',createdAt:1});
+    f.store.saveDelivery({id:'delivery-'+item.id,questId:item.id,commandId:'command',kind:'prompt',text:'private delivery',createdAt:1,deliveredAt:2});
     await f.file(item.sessionPath);await f.file(join(item.workspacePath,'report.md'));await f.file(join(f.data,'runs','run-'+item.id+'.json'),'{}');
   }
   f.store.saveCommand('create-parent','hash',{quest:q});f.store.saveCommand('keep-command','other',{quest:keep});
@@ -43,8 +43,8 @@ test('deletion removes the archived family, private files, and cached payloads; 
   assert.deepEqual(await f.storage.delete([q.id]),{deleted:[q.id],failed:[]});
 });
 
-test('only archived completed quests may be deleted and bulk failures retain their records',async t=>{
-  const f=await fixture(t);f.quest('current',{archivedAt:undefined});f.quest('running',{status:'running',activeRunId:'r'});f.quest('chat',{kind:'guildmaster'});f.quest('eligible');
+test('only closed settled quests may be deleted and bulk failures retain their records',async t=>{
+  const f=await fixture(t);f.quest('current',{closedAt:undefined,archivedAt:1});f.quest('running',{status:'running',activeRunId:'r'});f.quest('chat',{kind:'guildmaster'});f.quest('eligible');
   const result=await f.storage.delete(['current','running','chat','eligible']);
   assert.deepEqual(result.deleted,['eligible']);assert.equal(result.failed.length,3);for(const id of ['current','running','chat'])assert.ok(f.store.get(id));
   await assert.rejects(()=>f.storage.delete(['../source']),/Select between/);
@@ -98,29 +98,30 @@ test('another quest using a deterministic owned folder blocks deletion',async t=
   assert.equal((await f.storage.delete([q.id])).failed.length,1);assert.equal(await exists(join(q.workspacePath,'keep.txt')),true);assert.ok(f.store.get(q.id));
 });
 
-test('retention defaults off, counts archive age, persists, and excludes restored quests and chat history',async t=>{
+test('retention defaults off, counts closure age, persists, and excludes open quests and chat history',async t=>{
   const f=await fixture(t);const now=Date.now();
-  f.quest('old',{archivedAt:now-40*DAY,updatedAt:now});f.quest('fresh',{archivedAt:now-2*DAY,createdAt:now-100*DAY});f.quest('restored',{archivedAt:undefined,createdAt:1});f.quest('chat-history',{kind:'guildmaster',archivedAt:now-100*DAY});
+  f.quest('old',{closedAt:now-40*DAY,updatedAt:now});f.quest('fresh',{closedAt:now-2*DAY,archivedAt:now-100*DAY,createdAt:now-100*DAY});f.quest('reopened',{closedAt:undefined,createdAt:1});f.quest('chat-history',{kind:'guildmaster',closedAt:now-100*DAY});
+  assert.equal(f.storage.view().closedQuests,2);
   assert.equal(f.storage.view().retentionDays,null);await f.storage.cleanExpired(now);assert.ok(f.store.get('old'));
-  await f.storage.savePolicy(30);await f.storage.cleanExpired();assert.equal(f.store.get('old'),undefined);for(const id of ['fresh','restored','chat-history'])assert.ok(f.store.get(id));
+  await f.storage.savePolicy(30);await f.storage.cleanExpired();assert.equal(f.store.get('old'),undefined);for(const id of ['fresh','reopened','chat-history'])assert.ok(f.store.get(id));
   const second=new ArchiveStorage(f.service);assert.equal(second.view().retentionDays,30);await second.close();
   await f.storage.savePolicy(null);assert.equal(f.storage.view().retentionDays,null);
   for(const value of [0,-1,1.5,'30',3651,undefined])await assert.rejects(()=>f.storage.savePolicy(value),/whole number/);
 });
 
-test('cleanup rechecks a restore that wins the service queue',async t=>{
-  const f=await fixture(t);f.quest('race',{archivedAt:Date.now()-100*DAY});f.store.saveSetting('storage',{retentionDays:30});
-  const restoring=f.service.action('race','restore',{commandId:'restore-race'});
-  const cleanup=f.storage.cleanExpired();await restoring;await cleanup;assert.ok(f.store.get('race'));assert.equal(f.store.get('race')?.archivedAt,undefined);
+test('cleanup rechecks a reopen that wins the service queue',async t=>{
+  const f=await fixture(t);const closedAt=Date.now()-100*DAY;f.quest('race',{closedAt});f.store.saveSetting('storage',{retentionDays:30});
+  const reopening=f.service.action('race','reopen',{commandId:'reopen-race',expectedRunCount:1,expectedClosedAt:closedAt});
+  const cleanup=f.storage.cleanExpired();await reopening;assert.deepEqual(await cleanup,{deleted:[],failed:[]});assert.ok(f.store.get('race'));assert.equal(f.store.get('race')?.closedAt,undefined);
 });
 
 test('storage deletion endpoints require user authority and report partial failures',async t=>{
   const data=await mkdtemp(join(tmpdir(),'guildmaster-storage-http-'));const app=createApp({dataDir:data,port:0,models:[]});
   t.after(async()=>{await app.close();await rm(data,{recursive:true,force:true});});const {url,token}=await app.listen();
-  const q:Quest={id:'archived',title:'Archived example',objective:'Example',kind:'quest',status:'accepted',archivedAt:Date.now(),workspaceMode:'none',workspacePath:join(data,'workspaces','archived'),sessionPath:join(data,'sessions','archived','session.jsonl'),model:'fixture/model',tools:[],instructions:'',runCount:0,createdAt:1,updatedAt:1};app.store.save(q);
+  const q:Quest={id:'closed',title:'Closed example',objective:'Example',kind:'quest',status:'accepted',closedAt:Date.now(),workspaceMode:'none',workspacePath:join(data,'workspaces','closed'),sessionPath:join(data,'sessions','closed','session.jsonl'),model:'fixture/model',tools:[],instructions:'',runCount:0,createdAt:1,updatedAt:1};app.store.save(q);
   const post=(path:string,value:unknown,auth=token)=>fetch(url+path,{method:'POST',headers:{Authorization:'Bearer '+auth,'Content-Type':'application/json'},body:JSON.stringify(value)});
   assert.equal((await post('/api/quests/delete',{ids:[q.id]},'bad')).status,401);
-  app.store.save({...q,id:'gm',kind:'guildmaster',archivedAt:undefined,workspacePath:join(data,'workspaces','gm'),sessionPath:join(data,'sessions','gm','session.jsonl')});app.service.gmTokens.set('agent-token','gm');assert.equal((await post('/api/quests/delete',{ids:[q.id]},'agent-token')).status,403);
+  app.store.save({...q,id:'gm',kind:'guildmaster',closedAt:undefined,workspacePath:join(data,'workspaces','gm'),sessionPath:join(data,'sessions','gm','session.jsonl')});app.service.gmTokens.set('agent-token','gm');assert.equal((await post('/api/quests/delete',{ids:[q.id]},'agent-token')).status,403);
   assert.equal((await post('/api/settings/storage',{retentionDays:30},'agent-token')).status,403);
   const response=await post('/api/quests/delete',{ids:[q.id]});assert.equal(response.status,200);assert.deepEqual(await response.json(),{deleted:[q.id],failed:[]});
   assert.equal((await fetch(url+'/api/quests/'+q.id,{headers:{Authorization:'Bearer '+token}})).status,404);
@@ -129,14 +130,14 @@ test('storage deletion endpoints require user authority and report partial failu
 test('startup cleanup uses the saved policy without enabling deletion for a new installation',async t=>{
   const data=await mkdtemp(join(tmpdir(),'guildmaster-retention-startup-'));let app=createApp({dataDir:data,port:0,models:[]});
   t.after(async()=>{await app.close();await rm(data,{recursive:true,force:true});});
-  const q:Quest={id:'startup-old',title:'Old archived report',objective:'Example',kind:'quest',status:'accepted',archivedAt:Date.now()-100*DAY,workspaceMode:'none',workspacePath:join(data,'workspaces','startup-old'),sessionPath:join(data,'sessions','startup-old','session.jsonl'),model:'fixture/model',tools:[],instructions:'',runCount:0,createdAt:1,updatedAt:1};
+  const q:Quest={id:'startup-old',title:'Old closed report',objective:'Example',kind:'quest',status:'accepted',closedAt:Date.now()-100*DAY,workspaceMode:'none',workspacePath:join(data,'workspaces','startup-old'),sessionPath:join(data,'sessions','startup-old','session.jsonl'),model:'fixture/model',tools:[],instructions:'',runCount:0,createdAt:1,updatedAt:1};
   app.store.save(q);await app.listen();await app.archiveStorage.cleanExpired();assert.ok(app.store.get(q.id));
   app.store.saveSetting('storage',{retentionDays:30});await app.close();
   app=createApp({dataDir:data,port:0,models:[]});await app.listen();await app.archiveStorage.cleanExpired();
   assert.equal(app.store.get(q.id),undefined);assert.equal(app.archiveStorage.view().retentionDays,30);
 });
 
-test('missing ownership records leave archived quests and workspace files intact',async t=>{
+test('missing ownership records leave closed quests and workspace files intact',async t=>{
   const f=await fixture(t);const q=f.quest('untracked');const file=join(f.data,'worktrees',q.id,'keep.txt');await f.file(file);
   assert.equal((await f.storage.delete([q.id])).failed.length,1);assert.equal(await exists(file),true);assert.ok(f.store.get(q.id));
 });
@@ -159,8 +160,8 @@ test('mixed isolation cleans its private checkout and preserves external shared 
   assert.ok((await exec('git',['worktree','list','--porcelain'],{cwd:source})).stdout.includes(shared));
 });
 
-test('turning retention off before a queued deletion preserves the archive',async t=>{
-  const f=await fixture(t);f.quest('policy-race',{archivedAt:Date.now()-100*DAY});f.store.saveSetting('storage',{retentionDays:30});
+test('turning retention off before a queued deletion preserves the closed quest',async t=>{
+  const f=await fixture(t);f.quest('policy-race',{closedAt:Date.now()-100*DAY});f.store.saveSetting('storage',{retentionDays:30});
   const disabling=f.storage.savePolicy(null);const cleanup=f.storage.cleanExpired();await disabling;await cleanup;
   assert.ok(f.store.get('policy-race'));assert.equal(f.storage.view().retentionDays,null);
 });
@@ -183,4 +184,108 @@ test('storage compatibility links preserve shared-path protection and Git worktr
  assert.equal(await exists(workspace),false);
  await rm(alias);f.quest('alias-missing');
  const failed=await f.storage.delete(['alias-missing']);assert.match(failed.failed[0].error,/compatibility link/);assert.ok(f.store.get('alias-missing'));
+});
+
+
+test('explicit deletion permits safely closed failed and interrupted families',async t=>{
+  const f=await fixture(t);
+  for(const status of ['failed','interrupted'] as const) {
+    const q=f.quest(status,{status,archivedAt:undefined,closedAt:1,closeReason:'closed'});
+    f.quest(status+'-child',{kind:'delegate',parentQuestId:q.id,status:'interrupted',archivedAt:undefined});
+    await f.file(join(q.workspacePath,'result.md'));
+    assert.deepEqual(await f.storage.delete([q.id]),{deleted:[q.id],failed:[]});
+    assert.equal(await exists(q.workspacePath),false);
+  }
+});
+
+test('an existing enabled policy deletes all old closures, not recently closed quests with ancient archive timestamps',async t=>{
+  const f=await fixture(t);const now=Date.now();
+  for(const closeReason of ['accepted','closed','legacy'] as const)f.quest(closeReason,{closedAt:now-100*DAY,closeReason});
+  f.quest('recent',{archivedAt:now-100*DAY,closedAt:now});
+  f.store.saveSetting('storage',{retentionDays:30});
+  assert.deepEqual(new Set((await f.storage.cleanExpired(now)).deleted),new Set(['accepted','closed','legacy']));
+  assert.ok(f.store.get('recent'));assert.equal(f.storage.view().retentionDays,30);assert.equal(f.storage.view().closedQuests,1);
+});
+
+test('reopening excludes retention and closing again starts a fresh timer',async t=>{
+  const f=await fixture(t);const now=Date.now(),closedAt=now-100*DAY;
+  f.quest('reclose',{status:'failed',closedAt});f.store.saveSetting('storage',{retentionDays:30});
+  await f.service.action('reclose','reopen',{commandId:'reopen',expectedRunCount:1,expectedClosedAt:closedAt});
+  assert.deepEqual(await f.storage.cleanExpired(now),{deleted:[],failed:[]});
+  await f.service.action('reclose','close',{commandId:'close-again'});
+  assert.ok(f.store.get('reclose')!.closedAt!>=now);
+  assert.deepEqual(await f.storage.cleanExpired(now),{deleted:[],failed:[]});
+  assert.deepEqual((await f.storage.cleanExpired(now+31*DAY)).deleted,['reclose']);
+});
+
+for(const status of ['failed','interrupted'] as const)test(`retention safely retries an old closed ${status} family`,async t=>{
+  const f=await fixture(t);const now=Date.now();
+  const q=f.quest('expired',{status,closedAt:now-100*DAY});
+  const child=f.quest('child',{kind:'delegate',parentQuestId:q.id,status:'interrupted',closedAt:undefined});
+  await f.file(join(q.workspacePath,'keep.txt'));await f.file(child.sessionPath);
+  f.store.saveSetting('storage',{retentionDays:30});
+  const blocked=async(pattern:RegExp)=>{
+    const result=await f.storage.cleanExpired(now);assert.deepEqual(result.deleted,[]);assert.equal(result.failed.length,1);assert.match(result.failed[0].error,pattern);
+    assert.ok(f.store.get(q.id));assert.ok(f.store.get(child.id));assert.equal(await exists(join(q.workspacePath,'keep.txt')),true);assert.equal(await exists(child.sessionPath),true);
+  };
+  f.store.save({...child,activeRunId:'stopping'});await blocked(/active work/);f.store.save(child);
+  f.service.live.set(child.id,{} as never);await blocked(/active work/);f.service.live.delete(child.id);
+  f.store.request({id:'pending',questId:child.id,runId:'r',question:'Approve?',status:'pending',createdAt:1});
+  await blocked(/pending questions/);f.store.request({...f.store.requests(child.id)[0],status:'dismissed'});
+  f.store.saveDelivery({id:'instruction',questId:child.id,commandId:'c',kind:'prompt',text:'work',createdAt:1});
+  await blocked(/pending questions or instructions/);f.store.saveDelivery({...f.store.deliveries(child.id)[0],cancelledAt:2});
+  const preparing=t.mock.method(f.service,'familyPreparing',()=>true);await blocked(/active work/);preparing.mock.restore();
+  const unowned=join(f.data,'worktrees',q.id,'unowned.txt');await f.file(unowned);
+  await blocked(/ownership record/);await rm(join(f.data,'worktrees',q.id),{recursive:true});
+  assert.deepEqual(await f.storage.cleanExpired(now),{deleted:[q.id],failed:[]});
+  assert.equal(f.store.get(child.id),undefined);assert.equal(await exists(child.sessionPath),false);assert.equal(await exists(q.workspacePath),false);
+});
+
+test('closed families with pending requests, deliveries, workers or preparation cannot be deleted',async t=>{
+  const f=await fixture(t);const q=f.quest('closed',{status:'failed',closedAt:1,archivedAt:undefined});
+  const child=f.quest('guard-child',{kind:'delegate',parentQuestId:q.id,status:'interrupted',archivedAt:undefined});
+  await f.file(join(q.workspacePath,'keep.txt'));
+  f.store.request({id:'question',questId:child.id,runId:'r',question:'Approve?',status:'pending',createdAt:1});
+  assert.match((await f.storage.delete([q.id])).failed[0].error,/pending questions/);
+  f.store.request({...f.store.requests(child.id)[0],status:'dismissed'});
+  f.store.saveDelivery({id:'instruction',questId:child.id,commandId:'c',kind:'prompt',text:'work',createdAt:1});
+  assert.match((await f.storage.delete([q.id])).failed[0].error,/pending questions or instructions/);
+  f.store.saveDelivery({...f.store.deliveries(child.id)[0],cancelledAt:2});
+  f.service.live.set(child.id,{} as never);
+  assert.match((await f.storage.delete([q.id])).failed[0].error,/active work/);
+  f.service.live.delete(child.id);
+  t.mock.method(f.service,'familyPreparing',()=>true);
+  assert.match((await f.storage.delete([q.id])).failed[0].error,/active work/);
+  assert.equal(await exists(join(q.workspacePath,'keep.txt')),true);
+});
+
+test('deletion rechecks preparation after asynchronous filesystem planning',async t=>{
+  const f=await fixture(t);const q=f.quest('planning',{closedAt:1,archivedAt:undefined});
+  await f.file(join(q.workspacePath,'keep.txt'));
+  let checks=0;
+  t.mock.method(f.service,'familyPreparing',()=>++checks>1);
+  assert.match((await f.storage.delete([q.id])).failed[0].error,/active work/);
+  assert.equal(await exists(join(q.workspacePath,'keep.txt')),true);
+});
+
+test('a family change during asynchronous planning aborts before filesystem deletion',async t=>{
+  const f=await fixture(t);const q=f.quest('family-race',{closedAt:1,archivedAt:undefined});
+  await f.file(join(q.workspacePath,'keep.txt'));let injected=false;
+  t.mock.method(f.service,'familyPreparing',()=>{
+    if(!injected){injected=true;queueMicrotask(()=>f.quest('late-child',{kind:'delegate',parentQuestId:q.id,status:'running',activeRunId:'late',archivedAt:undefined}));}
+    return false;
+  });
+  assert.match((await f.storage.delete([q.id])).failed[0].error,/changed during cleanup/);
+  assert.equal(await exists(join(q.workspacePath,'keep.txt')),true);assert.ok(f.store.get(q.id));
+});
+
+test('reopen winning the queue prevents explicit deletion; deletion winning prevents reopen',async t=>{
+  const f=await fixture(t);f.quest('reopen-first',{closedAt:1,closeReason:'closed',archivedAt:undefined,status:'failed'});
+  const reopen=f.service.action('reopen-first','reopen',{commandId:'reopen-first',expectedRunCount:1,expectedClosedAt:1});
+  const removal=f.storage.delete(['reopen-first']);await reopen;
+  assert.equal((await removal).failed.length,1);assert.ok(f.store.get('reopen-first'));
+  f.quest('delete-first',{closedAt:1,closeReason:'closed',archivedAt:undefined,status:'failed'});
+  const deleting=f.storage.delete(['delete-first']);
+  const reopening=f.service.action('delete-first','reopen',{commandId:'too-late',expectedRunCount:1,expectedClosedAt:1});
+  await assert.rejects(reopening,/not found|deleted/i);assert.deepEqual((await deleting).deleted,['delete-first']);
 });
