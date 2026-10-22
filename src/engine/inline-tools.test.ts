@@ -73,5 +73,5 @@ test('worker keeps main builtins disabled and sends tool round events only at to
   assert.ok(source.includes("spec.role === 'guildmaster' ? [] : builtins"));
   assert.ok(source.includes("event.type === 'tool_execution_start'"));
   assert.ok(source.includes("emit({ type: 'inline_round', roundId })"));
-  for (const requirement of ['untrusted data', 'duration alone', '8 calls', '3 pages', '100 KiB', '4 tool-using', 'new direct user turn', 'Do not retry']) assert.ok(INLINE_ROUTING.includes(requirement), requirement);
+  for (const requirement of ['untrusted data', 'duration alone', '8 calls', '3 pages', '100 KiB', '4 tool-using', 'delegate_current_request', 'Do not retry']) assert.ok(INLINE_ROUTING.includes(requirement), requirement);
 });

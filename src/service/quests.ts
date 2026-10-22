@@ -153,7 +153,7 @@ export class QuestService extends EventEmitter {
       if(!project)throw new AppError('The original repository scope is unavailable. Ask the user to clarify the target.',409);
       scope={projectId:project.id,repositories:[{repositoryId:grant.repositoryId}],workspacePolicy:'isolated',revisions:[{repositoryId:grant.repositoryId,commit:grant.commit}]};
     }
-    return this.create({...scope,commandId,title:'Delegated user request',objective:authority.request,model:gm.model,tools:[...gm.tools]},'quest',undefined,source,undefined,guard);
+    return this.create({...scope,commandId,title:authority.request.replace(/\s+/g,' ').trim().slice(0,120)||'Delegated user request',objective:authority.request,model:gm.model,tools:[...gm.tools]},'quest',undefined,source,undefined,guard);
   }
   changed(id: string) { this.emit('change', { questId: id }); const parent = this.store.get(id)?.parentQuestId; if (parent) this.emit('change', { questId: parent }); }
   async saveProject(input: Record<string, unknown>, id?: string) {
