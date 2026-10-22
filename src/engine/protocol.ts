@@ -48,6 +48,8 @@ export interface WorkerSpec {
   serviceToken?: string;
   inlineToken?: string;
   inlineGrant?: InlineGrant;
+  /** Scoped local image capability; never a provider API credential. */
+  imageToken?: string;
   connectionToken?: string;
   connectionGrants?: import('../connections/types.ts').ConnectionGrant[];
 }

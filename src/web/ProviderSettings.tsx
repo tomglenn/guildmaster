@@ -2,6 +2,7 @@ import StorageSettings from './StorageSettings';
 import ConnectionsSettings from './ConnectionsSettings';
 import useStoredTab from './useStoredTab';
 import AppearanceSettings from './AppearanceSettings';
+import ImageGenerationSettings from './ImageGenerationSettings';
 import Icon from './Icon';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -18,7 +19,7 @@ async function request<T>(path: string, body?: unknown, method = 'POST'): Promis
 const safeUrl = (value?: string) => value && /^https?:\/\//i.test(value) ? value : undefined;
 
 export default function ProviderSettings({ onChanged }: { onChanged: (model?: string) => Promise<void> }) {
-  const [tab, setTab] = useStoredTab('guildmaster:settings-tab', ['providers', 'connections', 'appearance', 'storage'], 'providers');
+  const [tab, setTab] = useStoredTab('guildmaster:settings-tab', ['providers', 'connections', 'images', 'appearance', 'storage'], 'providers');
   const [connecting, setConnecting] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { if (connecting) dialog.current?.showModal(); }, [connecting]);
@@ -85,12 +86,14 @@ export default function ProviderSettings({ onChanged }: { onChanged: (model?: st
     <div className="detail-tabs settings-tabs" aria-label="Settings views">
       <button className={tab === 'providers' ? 'selected' : ''} aria-pressed={tab === 'providers'} onClick={() => setTab('providers')}><Icon name="providers" size={15}/>Providers</button>
       <button className={tab === 'connections' ? 'selected' : ''} aria-pressed={tab === 'connections'} onClick={() => setTab('connections')}><Icon name="connections" size={15}/>Connections</button>
+      <button className={tab === 'images' ? 'selected' : ''} aria-pressed={tab === 'images'} onClick={() => setTab('images')}><Icon name="image" size={15}/>Images</button>
       <button className={tab === 'appearance' ? 'selected' : ''} aria-pressed={tab === 'appearance'} onClick={() => setTab('appearance')}><Icon name="palette" size={15}/>Appearance</button>
       <button className={tab === 'storage' ? 'selected' : ''} aria-pressed={tab === 'storage'} onClick={() => setTab('storage')}><Icon name="archive" size={15}/>Storage</button>
     </div>
     </div>
     {tab === 'storage' && <StorageSettings onChanged={() => onChanged()}/>}
     {tab === 'connections' && <ConnectionsSettings/>}
+    {tab === 'images' && <ImageGenerationSettings/>}
     <div hidden={tab !== 'appearance'}><AppearanceSettings/></div>
     <div hidden={tab !== 'providers'}>
     {error && !connecting && <div className="inline-error" role="alert">{error}</div>}

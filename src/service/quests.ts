@@ -45,6 +45,10 @@ export class QuestService extends EventEmitter {
   inlineReads: InlineReads;
   connectionTokens = new Map<string,{questId:string;runId:string;grants:ConnectionGrant[];controller:AbortController}>();
   workerTokens = new Map<string, { questId: string; runId: string }>();
+  imageTokens = new Map<string, { questId: string; runId: string; controller: AbortController }>();
+  private revokeImageTokens(id: string) {
+    for (const [token, run] of this.imageTokens) if (run.questId === id) { run.controller.abort(); this.imageTokens.delete(token); }
+  }
   maxWorkers: number; private familyTurns = new Map<string, number>(); private scheduleTurn = 0; private scheduling = false;
   private queue: Promise<unknown> = Promise.resolve(); private stopping = false;
   private setups = new Map<string,{fingerprint:string;task:Promise<any>}>();
@@ -71,19 +75,25 @@ export class QuestService extends EventEmitter {
     this.queue = next.catch(() => {}); return next;
   }
   get(id: string) { const q = this.store.get(id); if (!q) throw new AppError('Quest not found.', 404); return q; }
-  agents(id: string) { return this.store.list().filter(q => q.parentQuestId === id).sort((a,b) => a.createdAt - b.createdAt).map(q=>({...q,queueReason:this.queueReason(q)})); }
-  withAgentSummary(q: Quest) {
-    const agents = this.agents(q.id);
+  agents(id: string) { return this.store.children(id).sort((a,b) => a.createdAt - b.createdAt).map(q=>({...q,queueReason:this.queueReason(q)})); }
+  withAgentSummary(q: Quest, agents: Quest[] = this.store.children(q.id)) {
     return { ...q, queueReason:this.queueReason(q), agentSummary: { total: agents.length, active: agents.filter(a => !terminalAgent(a)).length, needsAttention: agents.filter(a => ['failed','interrupted'].includes(a.status)).length } };
+  }
+  // One pass over all quests; summaries must not query children per quest.
+  board() {
+    const all = this.store.list(); const children = new Map<string, Quest[]>();
+    for (const q of all) if (q.parentQuestId) children.set(q.parentQuestId, [...(children.get(q.parentQuestId) ?? []), q]);
+    return { quests: all.filter(q => q.kind === 'quest').map(q => this.withAgentSummary(q, children.get(q.id) ?? [])), guildmaster: all.find(q => q.kind === 'guildmaster' && !q.archivedAt) ?? null };
   }
   detail(id: string) {
     const agents = this.agents(id);
-    const source = this.get(id).sourceRequest;
+    const quest = this.get(id);
+    const source = quest.sourceRequest;
     const origin = source?.role === 'quest' ? this.store.get(source.questId) : undefined;
-    return { quest: this.withAgentSummary(this.get(id)), messages: this.presentMessages(id), events: this.store.events(id), agents, live: this.partialMessages.get(id), toolCalls: this.store.toolCalls(id),
+    return { quest: this.withAgentSummary(quest, agents), messages: this.presentMessages(id), events: this.store.events(id), agents, live: this.partialMessages.get(id), toolCalls: this.store.toolCalls(id),
       followups: this.store.list().filter(q => q.kind === 'quest' && q.sourceRequest?.role === 'quest' && q.sourceRequest.questId === id).map(q => ({id:q.id,title:q.title,status:q.status,createdAt:q.createdAt})),
       originQuest: origin ? {id:origin.id,title:origin.title} : undefined,
-      scheduleAvailable: !!this.get(id).schedule && !!this.store.schedule(this.get(id).schedule!.id),
+      scheduleAvailable: !!quest.schedule && !!this.store.schedule(quest.schedule.id),
       requests: [ ...this.store.requests(id), ...agents.flatMap(agent => this.store.requests(agent.id)) ] };
   }
   private presentMessages(id: string) {
@@ -155,7 +165,13 @@ export class QuestService extends EventEmitter {
     }
     return this.create({...scope,commandId,title:authority.request.replace(/\s+/g,' ').trim().slice(0,120)||'Delegated user request',objective:authority.request,model:gm.model,tools:[...gm.tools]},'quest',undefined,source,undefined,guard);
   }
-  changed(id: string) { this.emit('change', { questId: id }); const parent = this.store.get(id)?.parentQuestId; if (parent) this.emit('change', { questId: parent }); }
+  changed(id: string) {
+    const quest = this.store.get(id);
+    for (const [token, run] of this.imageTokens) if (run.questId === id && (quest?.activeRunId !== run.runId || !['running','awaiting_input'].includes(quest.status))) {
+      run.controller.abort(); this.imageTokens.delete(token);
+    }
+    this.emit('change', { questId: id }); const parent = quest?.parentQuestId; if (parent) this.emit('change', { questId: parent });
+  }
   async saveProject(input: Record<string, unknown>, id?: string) {
     return this.serialize(async () => {
       const command = this.checkCommand(input.commandId, id ? `edit:project:${id}` : 'create:project', input);
@@ -694,7 +710,9 @@ export class QuestService extends EventEmitter {
     const messages = run ? this.store.messages(run.questId) : [];
     const index = messages.findIndex(message => message.id === run?.data.messageId);
     // Later requests can refer back to the most recent reference images.
-    const message = messages.slice(0,index + 1).findLast(message => !!message.attachments?.length);
+    // Generated assistant outputs stay durable references; never copy their bytes
+    // into instruction deliveries or native session snapshots on follow-up.
+    const message = messages.slice(0,index + 1).findLast(message => message.role === 'user' && !!message.attachments?.length);
     return (message?.attachments ?? []).map(attachment => {
       const image = this.store.image(run!.questId, attachment.id);
       if (!image) throw new AppError('A saved reference image is missing. Attach it again before continuing.',409);
@@ -741,6 +759,8 @@ export class QuestService extends EventEmitter {
     const runId = q.activeRunId!;
     const token = randomUUID();
     const connectionToken=randomUUID();
+    const imageToken=randomUUID();
+    this.imageTokens.set(imageToken,{questId:q.id,runId,controller:new AbortController()});
     const connectionGrants=this.store.getRun(runId)?.data.connectionGrants ?? [];
     this.inlineReads.onExhausted=this.inlineExhausted;
     const inline=this.inlineReads.attach(q,runId);
@@ -760,7 +780,7 @@ export class QuestService extends EventEmitter {
           ? q.sessionEstablished === true
           : !!q.result || this.store.deliveries(q.id).some(delivery => !!delivery.deliveredAt),
         sessionPath: q.sessionPath, model: q.model, tools: q.tools, instructions: q.instructions,
-        ...inline, connectionToken, connectionGrants, role: q.kind, parentQuestId: q.parentQuestId, questBoard: q.kind === 'guildmaster' ? this.questBoardSnapshot() : undefined, serviceUrl: this.serviceUrl, serviceToken: token, workspaceMode: q.workspaceMode,
+        ...inline, imageToken, connectionToken, connectionGrants, role: q.kind, parentQuestId: q.parentQuestId, questBoard: q.kind === 'guildmaster' ? this.questBoardSnapshot() : undefined, serviceUrl: this.serviceUrl, serviceToken: token, workspaceMode: q.workspaceMode,
         sourcePath: q.sourcePath, guidancePath: q.guidanceRevision ? join(this.dataDir, 'guidance', `${q.guidanceRevision}.json`) : undefined,
         agentDir: join(this.dataDir, 'engine'), project: q.project, workspaces: q.workspaces, workspacePolicy:q.workspacePolicy, isolation:q.isolation, preparedWorkspaces:q.preparedWorkspaces, outputPath:q.outputPath,
       }), { mode: 0o600 });
@@ -780,6 +800,7 @@ export class QuestService extends EventEmitter {
       child.on('close', (code, signal) => {
         this.inlineReads.revoke(q.id,runId);
         this.clearLive(q.id); this.store.interruptToolCalls(q.id, runId);
+        this.revokeImageTokens(q.id);
         this.connectionTokens.get(connectionToken)?.controller.abort();this.connectionTokens.delete(connectionToken);
         clearTimeout(live.cancelTimer); this.live.delete(q.id); this.gmRunTokens.delete(token); this.gmTokens.delete(token); this.workerTokens.delete(token);
         const current = this.get(q.id);
@@ -789,7 +810,7 @@ export class QuestService extends EventEmitter {
         finish(); this.changed(q.id); this.wakeParents(); this.schedule();
       });
       this.changed(q.id);
-    } catch (error) { this.inlineReads.revoke(q.id,runId);this.connectionTokens.get(connectionToken)?.controller.abort();this.connectionTokens.delete(connectionToken);this.gmRunTokens.delete(token);this.gmTokens.delete(token); this.workerTokens.delete(token); this.fail(q.id, runId, String(error)); }
+    } catch (error) { this.inlineReads.revoke(q.id,runId);this.revokeImageTokens(q.id);this.connectionTokens.get(connectionToken)?.controller.abort();this.connectionTokens.delete(connectionToken);this.gmRunTokens.delete(token);this.gmTokens.delete(token); this.workerTokens.delete(token); this.fail(q.id, runId, String(error)); }
   }
   workerEvent(id: string, runId: string, raw: unknown) {
     if (!raw || typeof raw !== 'object') return;
@@ -837,7 +858,7 @@ export class QuestService extends EventEmitter {
     } else if (m.type === 'tool_start' || m.type === 'tool_end') {
       const toolCallId = text(m.toolCallId, 'Tool call ID', 200);
       const callId = `${runId}:${toolCallId}`;
-      const previous = this.store.toolCalls(id).find(call => call.id === callId);
+      const previous = this.store.toolCall(callId);
       const tool = text(m.tool, 'Tool name', 200);
       if (m.type === 'tool_start') {
         if(q.kind==='guildmaster')try {this.inlineReads.toolBudget(id);} catch {return;}
@@ -847,7 +868,7 @@ export class QuestService extends EventEmitter {
           status: m.isError ? 'failed' : 'completed', endedAt: Date.now(), output: String(m.output ?? '').slice(0,['read_github_issue','read_github_comments','read_github_pull_metadata','read_repository','search_repository'].includes(tool)?110*1024:20000) });
       }
       // Deliver each persisted transition directly; snapshots remain the reconnect fallback.
-      this.emit('tool', { questId: id, call: this.store.toolCalls(id).find(call => call.id === callId) });
+      this.emit('tool', { questId: id, call: this.store.toolCall(callId) });
     } else if (m.type === 'activity') {
       this.store.event(id, String(m.tool ?? 'activity'), String(m.detail ?? '').slice(0, 4000));
     } else if (m.type === 'question') {
@@ -942,7 +963,7 @@ export class QuestService extends EventEmitter {
         Object.assign(q,{workspaces:replacement.workspaces,guidanceRevision:replacement.guidanceRevision,outputPath:replacement.outputPath,isolation:replacement.isolation,workspacePath:first.workspacePath,workspaceMode:first.mode,sourcePath:first.sourcePath,branch:first.branch});
       }
       if (!resume && parent && !q.isolation) q.guidanceRevision = parent.guidanceRevision;
-      const sourcePrompt = resume ? previousRun?.data.sourcePrompt ?? previousRun?.data.prompt ?? legacyInstruction ?? q.objective : message;
+      const sourcePrompt = resume ? previousRun?.data.sourcePrompt ?? previousRun?.data.prompt ?? legacyInstruction ?? q.objective : source?.text ?? message;
       this.store.transaction(() => {
         if (input.freshContext) this.store.event(id, 'assignment', 'Started an independent assignment. Earlier conversation files are retained.');
         this.prepare(q, message, command.id, undefined, sourcePrompt, resume ? { source: 'system' } : source ? { source: 'guildmaster', displayText: text(input.message, 'Feedback') } : delegated ? { source: 'quest_lead', displayText: text(input.message, 'Feedback') } : undefined, images.length ? images : source ? this.runImages(source.runId) : undefined);
@@ -976,7 +997,7 @@ export class QuestService extends EventEmitter {
         return { quest: q };
       }
       if (q.archivedAt !== undefined) throw new AppError('Restore this quest before changing its status.', 409);
-      if (action === 'accept' && this.detail(id).requests.some(request => request.status === 'pending')) throw new AppError('Answer the pending questions before accepting this quest.',409);
+      if (action === 'accept' && [id, ...this.store.children(id).map(agent => agent.id)].some(questId => this.store.requests(questId).some(request => request.status === 'pending'))) throw new AppError('Answer the pending questions before accepting this quest.',409);
       if (action === 'accept' && q.kind === 'delegate') throw new AppError('Delegate reports are reviewed by their quest lead.',409);
       if (action === 'accept' && q.status !== 'awaiting_review') throw new AppError('Only a result awaiting review can be accepted.', 409);
       q.status = action === 'accept' ? 'accepted' : 'cancelled'; const runId = q.activeRunId; q.activeRunId = undefined;
@@ -1051,6 +1072,7 @@ export class QuestService extends EventEmitter {
   }
   stopWorker(id: string) {
     this.inlineReads.revoke(id);
+    this.revokeImageTokens(id);
     for(const [token,run] of this.connectionTokens)if(run.questId===id){run.controller.abort();this.connectionTokens.delete(token);}
     const live = this.live.get(id); if (!live) return;
     if (live.child.connected) live.child.send({ type: 'cancel' }, () => {});

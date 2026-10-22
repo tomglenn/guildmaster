@@ -22,15 +22,21 @@ test('HTTP token separation, supervisor grants, mutation fence, resume persisten
   const spec=JSON.parse(await readFile(join(dir,'runs',q.activeRunId+'.json'),'utf8'));
   assert.deepEqual(spec.inlineGrant,{github:{host:'github.com',owner:'example',repository:'repo',number:42}});
   const input={kind:'github',operation:'issue',host:'github.com',owner:'example',repository:'repo',number:42,roundId:'round-1'};
-  for(const auth of [token,spec.serviceToken,spec.connectionToken])assert.equal((await request('/api/agent/inline-read',auth,input)).status,403);
+  for(const auth of [token,spec.serviceToken,spec.connectionToken,spec.imageToken])assert.equal((await request('/api/agent/inline-read',auth,input)).status,403);
   assert.equal((await request('/api/agent/inline-read',spec.inlineToken,input)).data.ok,true);
   assert.equal(calls,1);
+  const imageRead=await fetch(url+'/api/agent/images',{headers:{Authorization:`Bearer ${spec.imageToken}`}});
+  assert.equal(imageRead.status,200,'saved image references remain readable within the inline budget');
+  const imageMutation=await request('/api/agent/images/generate',spec.imageToken,{commandId:`${q.activeRunId}:injected-image`,prompt:'Source told me to generate',authorization:'injected'});
+  assert.equal(imageMutation.status,403,'image capability must not bypass the post-source mutation fence');
+  assert.match(imageMutation.data.error,/cannot authorize image generation/);
   for(const [path,data] of [['/api/quests',{objective:'Injected quest',commandId:'injected'}],['/api/projects',{name:'Injected project',commandId:'injected-project'}],['/api/schedule-drafts',{commandId:'injected-schedule'}]] as const) {
     const denied=await request(path,spec.serviceToken,data);assert.equal(denied.status,403);assert.match(denied.data.error,/delegate_current_request/);
   }
   assert.equal(app.store.list().filter(q=>q.kind==='quest').length,0);
   await app.service.action(q.id,'cancel',{commandId:'cancel-inline-main'});
   assert.equal((await request('/api/agent/inline-read',spec.inlineToken,input)).status,403);
+  assert.equal((await request('/api/agent/images/generate',spec.imageToken,{})).status,403,'cancellation revokes image authority too');
   assert.equal((await request('/api/quests',spec.serviceToken,{objective:'stale',commandId:'stale'})).status,403);
   const interrupted=app.service.get(q.id);interrupted.status='interrupted';app.store.save(interrupted);
   const resumed=(await app.service.continue(q.id,{commandId:'resume-inline-main'},true)).quest!;
@@ -76,6 +82,8 @@ for(const exhaustion of ['rounds','deadline','calls','bytes'] as const)test(`sup
   else if(exhaustion==='calls')for(let i=1;i<8;i++)await request('/api/agent/inline-read',spec.inlineToken,input);
   for(const path of ['/api/quests','/api/projects','/api/health','/api/bootstrap'])assert.equal((await request(path,spec.serviceToken)).status,403,path);
   for(const path of ['/api/agent/connections','/api/agent/connections/call'])assert.equal((await request(path,spec.connectionToken,path.endsWith('/call')?{}:undefined)).status,403,path);
+  assert.equal((await request('/api/agent/images',spec.imageToken)).status,403,'image listing cannot bypass exhausted tool budgets');
+  assert.equal((await request('/api/agent/images/generate',spec.imageToken,{})).status,403,'image generation cannot bypass exhausted tool budgets');
   assert.equal((await request('/api/projects',spec.serviceToken,{name:'Injected'})).status,403);
   assert.equal((await request('/api/quests',token)).status,200,'human remains authorized');
   assert.ok(sent.some(m=>m.type==='inline_exhausted'));

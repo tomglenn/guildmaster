@@ -20,6 +20,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS quests (id TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, questId TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS images (id TEXT PRIMARY KEY, questId TEXT NOT NULL, name TEXT NOT NULL, mimeType TEXT NOT NULL, data BLOB NOT NULL);
+      CREATE TABLE IF NOT EXISTS image_jobs (questId TEXT NOT NULL, commandId TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(questId,commandId));
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, questId TEXT NOT NULL, type TEXT NOT NULL, detail TEXT NOT NULL, createdAt INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, questId TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS commands (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, response TEXT NOT NULL);
@@ -36,6 +37,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS messages_quest ON messages(questId);
       CREATE INDEX IF NOT EXISTS events_quest ON events(questId);
       CREATE INDEX IF NOT EXISTS deliveries_quest ON deliveries(questId);
+      CREATE INDEX IF NOT EXISTS quests_parent ON quests(json_extract(data,'$.parentQuestId'));
     `);
     // Remove retired registry preferences without changing saved quest workspaces.
     this.transaction(() => {
@@ -57,6 +59,7 @@ export class Store {
     return row ? JSON.parse(row.data) : undefined;
   }
   list(): Quest[] { return (this.db.prepare('SELECT data FROM quests').all() as { data: string }[]).map(r => JSON.parse(r.data)).sort((a, b) => b.createdAt - a.createdAt); }
+  children(parentId: string): Quest[] { return (this.db.prepare("SELECT data FROM quests WHERE json_extract(data,'$.parentQuestId')=?").all(parentId) as { data: string }[]).map(r => JSON.parse(r.data)); }
   projects(): Project[] { return (this.db.prepare('SELECT data FROM projects').all() as { data: string }[]).map(r => JSON.parse(r.data)).sort((a, b) => a.name.localeCompare(b.name)); }
   project(id: string): Project | undefined {
     const row = this.db.prepare('SELECT data FROM projects WHERE id=?').get(id) as { data: string } | undefined;
@@ -82,10 +85,15 @@ export class Store {
   toolCalls(questId: string): ToolCall[] {
     return (this.db.prepare('SELECT data FROM tool_calls WHERE questId=? ORDER BY rowid').all(questId) as { data: string }[]).map(row => JSON.parse(row.data));
   }
+  toolCall(id: string): ToolCall | undefined {
+    const row = this.db.prepare('SELECT data FROM tool_calls WHERE id=?').get(id) as { data: string } | undefined;
+    return row ? JSON.parse(row.data) : undefined;
+  }
   saveToolCall(call: ToolCall) { this.db.prepare('INSERT INTO tool_calls VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(call.id, call.questId, JSON.stringify(call)); }
   interruptToolCalls(questId: string, runId?: string) {
-    for (const call of this.toolCalls(questId)) {
-      if (call.status === 'running' && (!runId || call.runId === runId)) this.saveToolCall({ ...call, status: 'interrupted', endedAt: Date.now() });
+    const rows = this.db.prepare("SELECT data FROM tool_calls WHERE questId=? AND json_extract(data,'$.status')='running'").all(questId) as { data: string }[];
+    for (const call of rows.map(row => JSON.parse(row.data) as ToolCall)) {
+      if (!runId || call.runId === runId) this.saveToolCall({ ...call, status: 'interrupted', endedAt: Date.now() });
     }
   }
   event(questId: string, type: string, detail: string) { this.db.prepare('INSERT INTO events (questId,type,detail,createdAt) VALUES (?,?,?,?)').run(questId, type, detail, Date.now()); }
@@ -137,7 +145,7 @@ export class Store {
       for(const row of this.db.prepare('SELECT id,response FROM commands').all() as {id:string;response:string}[]) {
         if(refers(JSON.parse(row.response)))this.db.prepare('UPDATE commands SET response=? WHERE id=?').run(JSON.stringify({permanentlyDeleted:true}),row.id);
       }
-      for(const table of ['messages','images','events','requests','runs','deliveries','tool_calls'])for(const id of ids)this.db.prepare(`DELETE FROM ${table} WHERE questId=?`).run(id);
+      for(const table of ['messages','images','image_jobs','events','requests','runs','deliveries','tool_calls'])for(const id of ids)this.db.prepare(`DELETE FROM ${table} WHERE questId=?`).run(id);
       for(const id of ids)this.db.prepare('DELETE FROM quests WHERE id=?').run(id);
     });
   }
