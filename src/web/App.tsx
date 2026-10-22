@@ -142,7 +142,7 @@ export default function App() {
   const refreshNumber = useRef(0);
   const selectedId = view === 'guildmaster' ? bootstrap?.guildmaster?.id : view === 'board' || view === 'settings' || view === 'projects' || view === 'schedules' || view.startsWith('schedule:') ? null : view;
   const selectedIdRef = useRef(selectedId); selectedIdRef.current = selectedId;
-  const refresh = useCallback(async () => {
+  const load = useCallback(async () => {
     const n = ++refreshNumber.current;
     try {
       const snapshot = await api<Bootstrap>('/api/bootstrap');
@@ -164,15 +164,29 @@ export default function App() {
       if (id) { try { const revision = streamRevision.current[id] ?? 0; const next = await api<Detail>(`/api/quests/${encodeURIComponent(id)}`); if (n === refreshNumber.current && id === selectedIdRef.current) { setDetail(next); if (revision === (streamRevision.current[id] ?? 0)) setStreaming(previous => ({ ...previous, [id]: next.live ?? null })); } } catch (error) { if ((error as { status?: number }).status === 404 && id === selectedIdRef.current) { setDetail(null); setView('board'); } else throw error; } }
     } catch (err) { if (n === refreshNumber.current) setConnectionError((err as Error).message); }
   }, []);
+  // Keep at most one snapshot request in flight; callers during a load share one follow-up load.
+  const running = useRef<Promise<void> | null>(null); const queued = useRef<Promise<void> | null>(null);
+  const refresh = useCallback((): Promise<void> => {
+    if (queued.current) return queued.current;
+    const start = () => { queued.current = null; const task = load().finally(() => { if (running.current === task) running.current = null; }); running.current = task; return task; };
+    if (!running.current) return start();
+    return queued.current = running.current.then(start);
+  }, [load]);
+  // Service events arrive in bursts while agents work; batch them into one snapshot.
+  const pendingRefresh = useRef<number | undefined>(undefined);
+  const scheduleRefresh = useCallback(() => {
+    if (pendingRefresh.current !== undefined) return;
+    pendingRefresh.current = window.setTimeout(() => { pendingRefresh.current = undefined; setRefreshVersion(v => v + 1); void refresh(); }, 250);
+  }, [refresh]);
   useEffect(() => { void refresh(); const timer = window.setInterval(() => void refresh(), 3000); return () => clearInterval(timer); }, [refresh]);
   useEffect(() => {
     const events = new EventSource('/api/events');
     events.addEventListener('tool', event => { try { window.dispatchEvent(new CustomEvent('guildmaster:tool', { detail: JSON.parse((event as MessageEvent).data) })); } catch { /* Snapshots recover missed transitions. */ } });
-    events.addEventListener('change', () => { setRefreshVersion(v => v + 1); void refresh(); });
+    events.addEventListener('change', scheduleRefresh);
     events.addEventListener('open', () => { setStreaming({}); setRefreshVersion(v => v + 1); void refresh(); });
-    events.addEventListener('live', event => { try { const data = JSON.parse((event as MessageEvent).data); if (!data.questId) return; streamRevision.current[data.questId] = (streamRevision.current[data.questId] ?? 0) + 1; if (data.live) setStreaming(old => ({ ...old, [data.questId]: data.live })); else { setRefreshVersion(v => v + 1); void refresh(); } } catch { /* Next snapshot restores durable state. */ } });
-    return () => events.close();
-  }, [refresh]);
+    events.addEventListener('live', event => { try { const data = JSON.parse((event as MessageEvent).data); if (!data.questId) return; streamRevision.current[data.questId] = (streamRevision.current[data.questId] ?? 0) + 1; if (data.live) setStreaming(old => ({ ...old, [data.questId]: data.live })); else scheduleRefresh(); } catch { /* Next snapshot restores durable state. */ } });
+    return () => { events.close(); clearTimeout(pendingRefresh.current); pendingRefresh.current = undefined; };
+  }, [refresh, scheduleRefresh]);
   useEffect(() => { setDetail(null); setResultJump(undefined); setTab('conversation'); setInspectingAgent(false); setActionError(''); if (selectedId) void refresh(); }, [selectedId, refresh]);
   useEffect(() => { savePreference('guildmaster:view', view); if (view !== 'guildmaster') setGmSuggestion(undefined); }, [view]);
   const quests = (bootstrap?.quests || []).filter(q => q.kind === 'quest');
