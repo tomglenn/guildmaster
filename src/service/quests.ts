@@ -129,6 +129,32 @@ export class QuestService extends EventEmitter {
     if (!run || run.questId !== gm.id || typeof run.data.prompt !== 'string') throw new AppError('The originating Guildmaster run is no longer available.',409);
     return { questId: gm.id, runId: gm.activeRunId!, text: run.data.sourcePrompt ?? run.data.prompt };
   }
+  async delegateRequest(gmId:string, expectedRunId:string, input:Record<string,unknown>) {
+    if(Object.keys(input).some(key=>key!=='commandId'))throw new AppError('Only commandId is accepted. The service owns the handoff scope.');
+    text(input.commandId,'Command ID',200);
+    const authority=this.inlineReads.handoff(gmId,expectedRunId);
+    // Origin identity, not model-selected command IDs, deduplicates retries and resumes.
+    const commandId=`inline-handoff:${authority.origin}`;
+    const existing=this.store.command(commandId);
+    if(existing)return existing.response;
+    const gm=this.get(gmId);
+    const guard=()=>{
+      this.inlineReads.handoff(gmId,expectedRunId);
+      if(authority.grant.kind==='repository') {
+        const grant=authority.grant;
+        if(!this.store.projects().some(p=>!p.archivedAt&&p.repositories.some(r=>r.id===grant.repositoryId&&r.path===grant.sourcePath)))throw new AppError('The original repository scope is unavailable. Ask the user to clarify the target.',409);
+      }
+    };
+    const source:DelegationSource={questId:gmId,runId:expectedRunId,text:authority.request};
+    const grant=authority.grant;
+    let scope:Partial<CreateQuest>={workspaceMode:'none'};
+    if(grant.kind==='repository') {
+      const project=this.store.projects().find(p=>!p.archivedAt&&p.repositories.some(r=>r.id===grant.repositoryId&&r.path===grant.sourcePath));
+      if(!project)throw new AppError('The original repository scope is unavailable. Ask the user to clarify the target.',409);
+      scope={projectId:project.id,repositories:[{repositoryId:grant.repositoryId}],workspacePolicy:'isolated',revisions:[{repositoryId:grant.repositoryId,commit:grant.commit}]};
+    }
+    return this.create({...scope,commandId,title:'Delegated user request',objective:authority.request,model:gm.model,tools:[...gm.tools]},'quest',undefined,source,undefined,guard);
+  }
   changed(id: string) { this.emit('change', { questId: id }); const parent = this.store.get(id)?.parentQuestId; if (parent) this.emit('change', { questId: parent }); }
   async saveProject(input: Record<string, unknown>, id?: string) {
     return this.serialize(async () => {
@@ -550,11 +576,11 @@ export class QuestService extends EventEmitter {
     const workspace = mode === 'worktree' && kind === 'quest' ? await this.addWorktree(source, id, undefined, created) : { workspacePath: directory(source) };
     return { project: undefined, workspaces: undefined, workspaceMode: mode as WorkspaceMode, sourcePath: directory(source), branch: undefined, ...workspace };
   }
-  private async createIsolated(input: CreateQuest, originalInput?: Record<string, unknown>, sourceRequest?: DelegationSource, images: ImageUpload[] = [], dispatch?: ScheduledDispatch) {
+  private async createIsolated(input: CreateQuest, originalInput?: Record<string, unknown>, sourceRequest?: DelegationSource, images: ImageUpload[] = [], dispatch?: ScheduledDispatch, guard?:()=>void) {
     const payload = sourceRequest ? {input,source:sourceRequest} : originalInput ?? input;
     return this.setup(input.commandId,'create:quest',payload,async () => {
       const snapshot = await this.serialize(async () => {
-        dispatch?.assertActive();
+        dispatch?.assertActive();guard?.();
         const objective = imageMessage(input.objective,images,'Objective');
         const tools = input.tools ?? DEFAULT_TOOLS;
         if (!Array.isArray(tools) || tools.some(t => !ALLOWED_TOOLS.includes(t))) throw new AppError('Unknown tool capability.');
@@ -576,7 +602,7 @@ export class QuestService extends EventEmitter {
       });
       const assertActive = () => {
         if (this.stopping) throw new AppError('Service is stopping.',503);
-        dispatch?.assertActive();
+        dispatch?.assertActive();guard?.();
         if (sourceRequest) {
           const gm = this.get(sourceRequest.questId);
           if (gm.activeRunId !== sourceRequest.runId || !['running','awaiting_input'].includes(gm.status)) throw new AppError('The originating request stopped during workspace preparation.',409);
@@ -614,15 +640,15 @@ export class QuestService extends EventEmitter {
       } finally {if (!saved) await prepared.cleanup();}
     });
   }
-  async create(input: CreateQuest, kind: Quest['kind'] = 'quest', originalInput?: Record<string, any>, sourceRequest?: DelegationSource, dispatch?: ScheduledDispatch) {
+  async create(input: CreateQuest, kind: Quest['kind'] = 'quest', originalInput?: Record<string, any>, sourceRequest?: DelegationSource, dispatch?: ScheduledDispatch, guard?:()=>void) {
     const images = validateImages(input.images);
     if (input.workspacePolicy !== undefined && !['shared','isolated'].includes(input.workspacePolicy)) throw new AppError('Unknown workspace policy.');
-    if (kind === 'quest' && input.workspacePolicy === 'isolated') return this.createIsolated(input,originalInput,sourceRequest,images,dispatch);
+    if (kind === 'quest' && input.workspacePolicy === 'isolated') return this.createIsolated(input,originalInput,sourceRequest,images,dispatch,guard);
     if (input.revisions !== undefined) throw new AppError('Pinned revisions require isolated workspaces.');
     return this.serialize(async () => {
       const command = this.checkCommand(input.commandId, kind === 'guildmaster' ? 'guildmaster' : 'create:quest', sourceRequest ? {input,source:sourceRequest} : originalInput ?? input);
       if (command.cached) return command.cached;
-      dispatch?.assertActive();
+      dispatch?.assertActive();guard?.();
       if (kind === 'guildmaster' && this.store.list().some(q => q.kind === 'guildmaster' && !q.archivedAt)) throw new AppError('Guildmaster already started in another request. Retry this message.', 409);
       const objective = imageMessage(input.objective, images, 'Objective');
       const tools = input.tools ?? DEFAULT_TOOLS;
@@ -644,7 +670,7 @@ export class QuestService extends EventEmitter {
           const origin = this.get(sourceRequest.questId);
           if (origin.activeRunId !== sourceRequest.runId || !['running','awaiting_input'].includes(origin.status)) throw new AppError('The originating request is no longer active.',409);
         }
-        dispatch?.assertActive();
+        dispatch?.assertActive();guard?.();
         this.checkAvailable(q);
         const prompt = delegatedPrompt(objective, sourceRequest);
         this.store.transaction(() => {

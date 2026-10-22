@@ -53,6 +53,16 @@ export class InlineReads {
     const grant=usage.grant;
     return {inlineToken:token,inlineGrant:grant?.kind==='github'?{github:{host:grant.host,owner:grant.owner,repository:grant.repository,...(grant.number?{number:grant.number}:{})}}:grant?{repository:{repositoryId:grant.repositoryId,commit:grant.commit}}:undefined};
   }
+  /** Authority for handing off only the bound direct request, never source text. */
+  handoff(questId:string,runId:string) {
+    const run=[...this.tokens.values()].find(r=>r.questId===questId&&r.runId===runId);
+    if(!run)throw new AppError('The originating request is no longer active.',403);
+    this.active(run);this.toolBudget(questId);
+    const message=this.store.messages(questId).find(m=>m.id===run.origin&&m.role==='user'&&m.source==='user');
+    const grant=this.usage(run.origin)?.grant;
+    if(!message||!grant)throw new AppError('Ask the user for one exact GitHub URL or one registered repository before delegating.',409);
+    return {origin:run.origin,request:message.displayText??message.text,grant};
+  }
   private active(run:Run) {
     const q=this.store.get(run.questId);
     if(run.controller.signal.aborted||q?.activeRunId!==run.runId||!['running','awaiting_input'].includes(q.status))throw new AppError('This run no longer has inline read access.',403);

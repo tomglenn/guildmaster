@@ -129,8 +129,14 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
       }
       if (path.startsWith('/api/')) {
         const auth = authorize(req);
-        // Source text cannot authorize project edits, new quests, or consequential coordination.
-        // A fresh direct user turn is required after a lookup; worker questions use IPC.
+        // The only post-read mutation exception copies the exact original direct request.
+        if(path==='/api/guildmaster/delegate-request') {
+          if(!auth.gm)throw new AppError('Only the active Guildmaster run can hand off its request.',403);
+          if(req.method!=='POST')throw new AppError('Method not allowed.',405);
+          const runId=auth.gm.activeRunId!;
+          json(res,200,await service.delegateRequest(auth.gm.id,runId,await body(req)));return;
+        }
+        // Source text cannot authorize other mutations; worker questions use IPC.
         if(auth.gm&&req.method!=='GET'&&req.method!=='HEAD'&&service.inlineReads.hasRead(auth.gm.id))throw new AppError('Inline source data cannot authorize mutations. Ask the user in a new direct message before changing projects or creating/continuing quests.',403);
         const filePath = path.match(/^\/api\/quests\/([^/]+)\/files\/(.+)$/);
         if (filePath) {
