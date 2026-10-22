@@ -26,7 +26,7 @@ test('HTTP token separation, supervisor grants, mutation fence, resume persisten
   assert.equal((await request('/api/agent/inline-read',spec.inlineToken,input)).data.ok,true);
   assert.equal(calls,1);
   for(const [path,data] of [['/api/quests',{objective:'Injected quest',commandId:'injected'}],['/api/projects',{name:'Injected project',commandId:'injected-project'}],['/api/schedule-drafts',{commandId:'injected-schedule'}]] as const) {
-    const denied=await request(path,spec.serviceToken,data);assert.equal(denied.status,403);assert.match(denied.data.error,/new direct message/);
+    const denied=await request(path,spec.serviceToken,data);assert.equal(denied.status,403);assert.match(denied.data.error,/delegate_current_request/);
   }
   assert.equal(app.store.list().filter(q=>q.kind==='quest').length,0);
   await app.service.action(q.id,'cancel',{commandId:'cancel-inline-main'});

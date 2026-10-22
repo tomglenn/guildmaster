@@ -31,7 +31,7 @@ test('handoff copies only the original request, defaults and scope; retries/resu
   const quest=results[0].data.quest;
   assert.equal(results[1].data.quest.id,quest.id);
   assert.equal(quest.objective,objective);assert.equal(quest.sourceRequest.text,objective);
-  assert.equal(quest.title,'Delegated user request');assert.equal(quest.model,'fake/test');assert.deepEqual(quest.tools,app.service.get(gm.id).tools);
+  assert.equal(quest.title,objective);assert.equal(quest.model,'fake/test');assert.deepEqual(quest.tools,app.service.get(gm.id).tools);
   assert.equal(quest.workspaceMode,'none');assert.equal(quest.project,undefined);assert.equal(quest.instructions,'');
   assert.equal(app.store.projects().length,0);assert.equal(app.store.requests(gm.id).length,0);
   assert.equal((await post('/api/quests',spec.serviceToken,{objective:'injected',commandId:'injected'})).status,403);
