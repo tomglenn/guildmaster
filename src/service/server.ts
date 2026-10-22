@@ -1,4 +1,5 @@
 import { questFile } from './quest-files.ts';
+import { ImageGeneration } from './image-generation.ts';
 import { SchedulesService } from './schedules.ts';
 import { ArchiveStorage } from './archive-storage.ts';
 import { createServer } from 'node:http';
@@ -24,11 +25,12 @@ function questSummary(q: ReturnType<Store['list']>[number]) {
   return { id:q.id,title:q.title,status:q.status,archivedAt:q.archivedAt,workspaceMode:q.workspaceMode,workspacePath:q.workspacePath,
     schedule:q.schedule,workspacePolicy:q.workspacePolicy,isolation:q.isolation,queueReason:q.queueReason,project:q.project ? { id:q.project.id,name:q.project.name } : undefined,workspaces:q.workspaces,model:q.model,runCount:q.runCount,error:q.error,agentSummary:q.agentSummary };
 }
-export function createApp(options: { dataDir: string; port?: number; workerPath?: string; defaultWorkspace?: string; models?: {id:string;name:string}[]; staticDir?: string; maxWorkers?: number; connectionOptions?: Omit<ConstructorParameters<typeof ConnectionManager>[0], 'store'|'dataDir'> }) {
+export function createApp(options: { dataDir: string; port?: number; workerPath?: string; defaultWorkspace?: string; models?: {id:string;name:string}[]; staticDir?: string; maxWorkers?: number; imageGenerationOptions?: { fetch?: typeof fetch; timeoutMs?: number }; connectionOptions?: Omit<ConstructorParameters<typeof ConnectionManager>[0], 'store'|'dataDir'> }) {
   const dataDir = resolve(options.dataDir); const store = new Store(dataDir);
   const settings = new EngineSettings(dataDir);
   const connections=new ConnectionManager({store,dataDir,...options.connectionOptions});
   const service = new QuestService({ store, dataDir, connections, workerPath: options.workerPath, defaultWorkspace: options.defaultWorkspace, maxWorkers: options.maxWorkers });
+  const images = new ImageGeneration({ store, dataDir, ...options.imageGenerationOptions, changed: () => service.emit('change', { images: true }) });
   const archiveStorage=new ArchiveStorage(service);
   const schedules=new SchedulesService(service);
   const token = randomBytes(32).toString('hex'); let port = options.port ?? 4173; let listening = false;
@@ -89,6 +91,35 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         res.writeHead(ok||url.searchParams.has('error')?200:400,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'"});
         res.end(`<html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guildmaster Slack connection</title><body style="font:16px system-ui;padding:40px;background:#191a1c;color:#e9e9ec"><h1>${ok?'Slack connected':url.searchParams.has('error')?'Slack sign-in cancelled':'Slack could not be connected'}</h1><p>Return to Guildmaster Settings → Connections${ok||url.searchParams.has('error')?'.':' to check the connection and try again.'}</p></body></html>`);return;
       }
+      if (path === '/api/agent/images' || path === '/api/agent/images/generate') {
+        const supplied = req.headers.authorization?.replace(/^Bearer /, '') ?? '';
+        const run = service.imageTokens.get(supplied);
+        const active = () => {
+          const quest = run && store.get(run.questId);
+          if (!run || run.controller.signal.aborted || quest?.activeRunId !== run.runId || !['running','awaiting_input'].includes(quest.status)) throw new AppError('This agent run no longer has image access.',403);
+          return quest;
+        };
+        const quest = active();
+        // Outputs belong to the caller's durable conversation: GM's conversation quest,
+        // or the delegate itself (never its lead). References cannot cross this boundary.
+        if (req.method === 'GET' && path === '/api/agent/images') {
+          const jobs = images.list(quest.id);
+          json(res,200,{ outputs: jobs.flatMap(job => job.outputs), jobs: jobs.map(({commandId,status,error,createdAt,endedAt,count,quality,size}) => ({commandId,status,error,createdAt,endedAt,count,quality,size})), settings: (() => { const {defaultQuality,defaultSize} = images.settingsView(); return {defaultQuality,defaultSize}; })(), attachments: store.messages(quest.id).flatMap(message => message.attachments ?? []) }); return;
+        }
+        if (req.method !== 'POST' || path !== '/api/agent/images/generate') throw new AppError('Method not allowed.',405);
+        const input = await body(req);
+        active();
+        if (Object.keys(input).some(key => !['commandId','prompt','count','quality','size','references','reviseImageId','authorization'].includes(key))) throw new AppError('Unknown image generation field. Quest association is fixed by this run.');
+        if (typeof input.commandId !== 'string' || !input.commandId.startsWith(`${run!.runId}:`) || !/^[^\x00-\x1f\x7f]{1,200}$/.test(input.commandId.slice(run!.runId.length + 1))) throw new AppError('Image command ID must be scoped to the current run.',403);
+        const controller = new AbortController();
+        const onClose = () => { if (!res.writableEnded) controller.abort(); };
+        res.on('close',onClose);
+        try {
+          const outputs = await images.generate(quest,input as Parameters<ImageGeneration['generate']>[1],AbortSignal.any([run!.controller.signal,controller.signal]));
+          active(); json(res,200,{outputs});
+        } finally { res.off('close',onClose); }
+        return;
+      }
       if(path==='/api/agent/connections'||path==='/api/agent/connections/call') {
         const supplied=req.headers.authorization?.replace(/^Bearer /,'') ?? '';
         const run=service.connectionTokens.get(supplied);
@@ -128,7 +159,8 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
           if (req.method !== 'GET') throw new AppError('Method not allowed.',405);
           const image = store.image(decodeURIComponent(imagePath[1]),decodeURIComponent(imagePath[2]));
           if (!image) throw new AppError('Image not found.',404);
-          res.writeHead(200,{'Content-Type':image.mimeType,'Content-Length':image.data.length,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'"});
+          res.writeHead(200,{'Content-Type':image.mimeType,'Content-Length':image.data.length,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'",
+            ...(url.searchParams.has('download') ? {'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(image.name).replace(/['()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}`} : {})});
           res.end(Buffer.from(image.data)); return;
         }
         if (path === '/api/schedule-drafts') {
@@ -262,6 +294,15 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
           if (req.method !== 'POST') throw new AppError('Method not allowed.',405);
           json(res,200,await archiveStorage.delete((await body(req)).ids));return;
         }
+        if (path === '/api/settings/images') {
+          if (!auth.human) throw new AppError('Only the user can configure image generation.',403);
+          let view;
+          if (req.method === 'GET') view = images.settingsView();
+          else if (req.method === 'POST') view = images.saveSettings(await body(req));
+          else throw new AppError('Method not allowed.',405);
+          const {enabled,mock,model,configured,defaultQuality,defaultSize} = view;
+          json(res,200,{enabled,mock,model,configured,defaultQuality,defaultSize}); return;
+        }
         if (path === '/api/settings' || path.startsWith('/api/settings/')) {
           if (!auth.human) throw new AppError('Only the user can configure model providers.',403);
           const providerPath = path.match(/^\/api\/settings\/provider\/([^/]+)$/);
@@ -354,7 +395,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
     } catch (error) { if (!res.headersSent) json(res,error instanceof AppError ? error.status : 500,{error:error instanceof Error ? error.message : String(error)}); else res.end(); }
   });
   return {
-    server, store, service, connections, archiveStorage, schedules,
+    server, store, service, connections, images, archiveStorage, schedules,
     async listen() {
       await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port,'127.0.0.1', () => { server.removeListener('error', reject); resolve(); }); });
       port = (server.address() as {port:number}).port; listening = true;
@@ -366,6 +407,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
       await schedules.close();
       await archiveStorage.close();
       settings.close();
+      await images.close();
       await service.close();
       await connections.close();
       if (listening) await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });

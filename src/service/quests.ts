@@ -42,6 +42,10 @@ export class QuestService extends EventEmitter {
   connections?: ConnectionManager;
   connectionTokens = new Map<string,{questId:string;runId:string;grants:ConnectionGrant[];controller:AbortController}>();
   workerTokens = new Map<string, { questId: string; runId: string }>();
+  imageTokens = new Map<string, { questId: string; runId: string; controller: AbortController }>();
+  private revokeImageTokens(id: string) {
+    for (const [token, run] of this.imageTokens) if (run.questId === id) { run.controller.abort(); this.imageTokens.delete(token); }
+  }
   maxWorkers: number; private familyTurns = new Map<string, number>(); private scheduleTurn = 0; private scheduling = false;
   private queue: Promise<unknown> = Promise.resolve(); private stopping = false;
   private setups = new Map<string,{fingerprint:string;task:Promise<any>}>();
@@ -130,7 +134,13 @@ export class QuestService extends EventEmitter {
     if (!run || run.questId !== gm.id || typeof run.data.prompt !== 'string') throw new AppError('The originating Guildmaster run is no longer available.',409);
     return { questId: gm.id, runId: gm.activeRunId!, text: run.data.sourcePrompt ?? run.data.prompt };
   }
-  changed(id: string) { this.emit('change', { questId: id }); const parent = this.store.get(id)?.parentQuestId; if (parent) this.emit('change', { questId: parent }); }
+  changed(id: string) {
+    const quest = this.store.get(id);
+    for (const [token, run] of this.imageTokens) if (run.questId === id && (quest?.activeRunId !== run.runId || !['running','awaiting_input'].includes(quest.status))) {
+      run.controller.abort(); this.imageTokens.delete(token);
+    }
+    this.emit('change', { questId: id }); const parent = quest?.parentQuestId; if (parent) this.emit('change', { questId: parent });
+  }
   async saveProject(input: Record<string, unknown>, id?: string) {
     return this.serialize(async () => {
       const command = this.checkCommand(input.commandId, id ? `edit:project:${id}` : 'create:project', input);
@@ -669,7 +679,9 @@ export class QuestService extends EventEmitter {
     const messages = run ? this.store.messages(run.questId) : [];
     const index = messages.findIndex(message => message.id === run?.data.messageId);
     // Later requests can refer back to the most recent reference images.
-    const message = messages.slice(0,index + 1).findLast(message => !!message.attachments?.length);
+    // Generated assistant outputs stay durable references; never copy their bytes
+    // into instruction deliveries or native session snapshots on follow-up.
+    const message = messages.slice(0,index + 1).findLast(message => message.role === 'user' && !!message.attachments?.length);
     return (message?.attachments ?? []).map(attachment => {
       const image = this.store.image(run!.questId, attachment.id);
       if (!image) throw new AppError('A saved reference image is missing. Attach it again before continuing.',409);
@@ -708,6 +720,8 @@ export class QuestService extends EventEmitter {
     const runId = q.activeRunId!;
     const token = randomUUID();
     const connectionToken=randomUUID();
+    const imageToken=randomUUID();
+    this.imageTokens.set(imageToken,{questId:q.id,runId,controller:new AbortController()});
     const connectionGrants=this.store.getRun(runId)?.data.connectionGrants ?? [];
     this.connectionTokens.set(connectionToken,{questId:q.id,runId,grants:connectionGrants,controller:new AbortController()});
     try {
@@ -725,7 +739,7 @@ export class QuestService extends EventEmitter {
           ? q.sessionEstablished === true
           : !!q.result || this.store.deliveries(q.id).some(delivery => !!delivery.deliveredAt),
         sessionPath: q.sessionPath, model: q.model, tools: q.tools, instructions: q.instructions,
-        connectionToken, connectionGrants, role: q.kind, parentQuestId: q.parentQuestId, questBoard: q.kind === 'guildmaster' ? this.questBoardSnapshot() : undefined, serviceUrl: this.serviceUrl, serviceToken: token, workspaceMode: q.workspaceMode,
+        imageToken, connectionToken, connectionGrants, role: q.kind, parentQuestId: q.parentQuestId, questBoard: q.kind === 'guildmaster' ? this.questBoardSnapshot() : undefined, serviceUrl: this.serviceUrl, serviceToken: token, workspaceMode: q.workspaceMode,
         sourcePath: q.sourcePath, guidancePath: q.guidanceRevision ? join(this.dataDir, 'guidance', `${q.guidanceRevision}.json`) : undefined,
         agentDir: join(this.dataDir, 'engine'), project: q.project, workspaces: q.workspaces, workspacePolicy:q.workspacePolicy, isolation:q.isolation, preparedWorkspaces:q.preparedWorkspaces, outputPath:q.outputPath,
       }), { mode: 0o600 });
@@ -742,6 +756,7 @@ export class QuestService extends EventEmitter {
       // 'close' also fires when spawn fails before a PID exists; 'exit' does not.
       child.on('close', (code, signal) => {
         this.clearLive(q.id); this.store.interruptToolCalls(q.id, runId);
+        this.revokeImageTokens(q.id);
         this.connectionTokens.get(connectionToken)?.controller.abort();this.connectionTokens.delete(connectionToken);
         clearTimeout(live.cancelTimer); this.live.delete(q.id); this.gmTokens.delete(token); this.workerTokens.delete(token);
         const current = this.get(q.id);
@@ -751,7 +766,7 @@ export class QuestService extends EventEmitter {
         finish(); this.changed(q.id); this.wakeParents(); this.schedule();
       });
       this.changed(q.id);
-    } catch (error) { this.connectionTokens.get(connectionToken)?.controller.abort();this.connectionTokens.delete(connectionToken);this.gmTokens.delete(token); this.workerTokens.delete(token); this.fail(q.id, runId, String(error)); }
+    } catch (error) { this.revokeImageTokens(q.id); this.connectionTokens.get(connectionToken)?.controller.abort();this.connectionTokens.delete(connectionToken);this.gmTokens.delete(token); this.workerTokens.delete(token); this.fail(q.id, runId, String(error)); }
   }
   workerEvent(id: string, runId: string, raw: unknown) {
     if (!raw || typeof raw !== 'object') return;
@@ -894,7 +909,7 @@ export class QuestService extends EventEmitter {
         Object.assign(q,{workspaces:replacement.workspaces,guidanceRevision:replacement.guidanceRevision,outputPath:replacement.outputPath,isolation:replacement.isolation,workspacePath:first.workspacePath,workspaceMode:first.mode,sourcePath:first.sourcePath,branch:first.branch});
       }
       if (!resume && parent && !q.isolation) q.guidanceRevision = parent.guidanceRevision;
-      const sourcePrompt = resume ? previousRun?.data.sourcePrompt ?? previousRun?.data.prompt ?? legacyInstruction ?? q.objective : message;
+      const sourcePrompt = resume ? previousRun?.data.sourcePrompt ?? previousRun?.data.prompt ?? legacyInstruction ?? q.objective : source?.text ?? message;
       this.store.transaction(() => {
         if (input.freshContext) this.store.event(id, 'assignment', 'Started an independent assignment. Earlier conversation files are retained.');
         this.prepare(q, message, command.id, undefined, sourcePrompt, resume ? { source: 'system' } : source ? { source: 'guildmaster', displayText: text(input.message, 'Feedback') } : delegated ? { source: 'quest_lead', displayText: text(input.message, 'Feedback') } : undefined, images.length ? images : source ? this.runImages(source.runId) : undefined);
@@ -1002,6 +1017,7 @@ export class QuestService extends EventEmitter {
     });
   }
   stopWorker(id: string) {
+    this.revokeImageTokens(id);
     for(const [token,run] of this.connectionTokens)if(run.questId===id){run.controller.abort();this.connectionTokens.delete(token);}
     const live = this.live.get(id); if (!live) return;
     if (live.child.connected) live.child.send({ type: 'cancel' }, () => {});

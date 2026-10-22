@@ -2,7 +2,6 @@ import Breadcrumbs from './Breadcrumbs';
 import ActivityFeed from './ActivityFeed';
 import QuestInfo from './QuestInfo';
 import LatestResultShortcut from './LatestResultShortcut';
-import { latestResultMessage } from './transcript-data';
 import Icon from './Icon';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Markdown from './Markdown';
@@ -56,7 +55,6 @@ export default function Agents({ onBoard, questId, parentTitle, agents, pendingA
   const restorePosition = useRef(true);
   const shown = detail?.quest.id === selectedId ? detail : null;
   const current = shown?.quest ?? agents.find(agent => agent.id === selectedId);
-  const resultMessage = latestResultMessage(shown?.messages || [], current?.result);
   const pendingRequest = shown?.requests.find(request => request.status === 'pending');
   const pending = !!pendingRequest || !!selectedId && pendingAgentIds.includes(selectedId);
   const live = selectedId && Object.hasOwn(liveByQuest, selectedId) ? liveByQuest[selectedId] : shown?.live ?? null;
@@ -143,7 +141,7 @@ export default function Agents({ onBoard, questId, parentTitle, agents, pendingA
       {canResume && ['interrupted', 'failed'].includes(current.status) && shown && !pending && <div className="agent-recovery"><span>The saved assignment can continue.</span><button className="button small" disabled={resuming || !!connectionError} onClick={async () => { setResuming(true); setActionError(''); try { await onResume(current.id); await refresh(); } catch (cause) { setActionError((cause as Error).message); } finally { setResuming(false); } }}>{resuming ? 'Resuming…' : 'Resume agent'}</button></div>}
       {!shown ? !error && <div className="loading-state"><span className="spinner"/> Loading agent…</div> : <Transcript questId={shown.quest.id} showToolCalls jumpTo={resultJump} key={shown.quest.id} messages={shown.messages} requests={shown.requests} questionsForLead toolCalls={shown.toolCalls || []} events={shown.events} live={live} status={shown.quest.status} queueReason={shown.quest.queueReason} activeRunId={shown.quest.activeRunId} assistantLabel="Agent"/>}
     </div></div>
-      {resultMessage && <LatestResultShortcut messageId={resultMessage.id} onJump={() => { followLatest.current = false; setResultJump(previous => ({ id: resultMessage.id, sequence: (previous?.sequence ?? 0) + 1 })); }}/>}
+      <LatestResultShortcut key={selectedId} onJump={id => { followLatest.current = false; setResultJump(previous => ({ id, sequence: (previous?.sequence ?? 0) + 1 })); }}/>
     </div>
     {infoOpen && <QuestInfo label="Agent info" onClose={() => setInfoOpen(false)} activity={<ActivityFeed events={shown?.events || []}/>} details={<div className="details-pane">
       <section className="inspector-section"><h3>Assignment</h3><Markdown text={current.objective}/></section>

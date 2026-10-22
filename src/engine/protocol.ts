@@ -41,6 +41,8 @@ export interface WorkerSpec {
   role: 'quest' | 'guildmaster' | 'delegate';
   serviceUrl?: string;
   serviceToken?: string;
+  /** Scoped local image capability; never a provider API credential. */
+  imageToken?: string;
   connectionToken?: string;
   connectionGrants?: import('../connections/types.ts').ConnectionGrant[];
 }

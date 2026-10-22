@@ -1,0 +1,58 @@
+// Isolated real-browser smoke test. Requires GUILDMASTER_TEST_BUILD and PLAYWRIGHT_MODULE.
+import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { createApp } from '../src/service/server.ts';
+
+if (!process.env.GUILDMASTER_TEST_BUILD || !process.env.PLAYWRIGHT_MODULE) throw new Error('Set GUILDMASTER_TEST_BUILD and PLAYWRIGHT_MODULE.');
+const { chromium } = await import(pathToFileURL(resolve(process.env.PLAYWRIGHT_MODULE)).href);
+const dataDir = await mkdtemp(join(tmpdir(), 'guildmaster-image-browser-'));
+assert.ok(dataDir.startsWith(tmpdir()));
+const options = { dataDir, port: 0, models: [], staticDir: resolve(process.env.GUILDMASTER_TEST_BUILD), defaultWorkspace: dataDir, imageGenerationOptions: { fetch: (async () => { throw new Error('Network generation forbidden in smoke test.'); }) as typeof fetch } };
+let app = createApp(options);
+let browser: any;
+try {
+  app.service.schedule = () => {};
+  const { quest } = await app.service.create({ objective: 'Include mockup images that illustrate your concepts.', title: 'Image preview fixture', workspaceMode: 'none', tools: [], commandId: 'fixture' });
+  app.images.saveSettings({ enabled: true, mock: true });
+  const outputs = await app.images.generate(quest, { commandId: 'browser:concepts', prompt: 'Synthetic mockup', count: 2, authorization: quest.objective });
+  const revised = await app.images.generate(quest, { commandId: 'browser:revision', prompt: 'More compact', reviseImageId: outputs[1].id, authorization: quest.objective });
+  assert.equal(revised[0].conceptIndex, 2); assert.equal(revised[0].version, 2);
+  const first = await app.listen();
+  assert.notEqual(new URL(first.url).port, '4173');
+  const health = await (await fetch(`${first.url}/api/health`)).json(); assert.equal(health.dataDir, dataDir);
+  browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const page = await browser.newPage({ viewport: { width: 1100, height: 850 } });
+  const errors: string[] = []; page.on('pageerror', (error: Error) => errors.push(error.message));
+  const openQuest = async () => { await page.getByText('Image preview fixture', { exact: true }).first().click(); await page.locator('.message-image').first().waitFor(); };
+  await page.goto(first.url); await openQuest();
+  assert.equal(await page.locator('.message-image').count(), 3);
+  await page.locator('.message-image').nth(2).click();
+  await page.getByRole('dialog').waitFor();
+  const download = page.getByRole('link', { name: /Download/ });
+  const downloaded = page.waitForEvent('download'); await download.click();
+  assert.match((await downloaded).suggestedFilename(), /concept-2-v2\.png/);
+  await page.keyboard.press('Escape');
+  await page.locator('.sidebar-main nav').getByRole('button', { name: 'Guildmaster', exact: true }).click(); await openQuest();
+  assert.equal(await page.locator('.message-image').count(), 3);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Images', exact: true }).click();
+  await page.getByLabel(/^Default quality/).selectOption('high');
+  await page.getByLabel(/^Default size/).selectOption('1536x1024');
+  assert.equal(await page.getByLabel(/^Output budget/).count(), 0);
+  assert.equal(await page.getByLabel(/^Attempt budget/).count(), 0);
+  await page.getByRole('button', { name: 'Save image settings', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Image settings saved.' }).waitFor();
+  assert.equal(app.images.settingsView().defaultQuality, 'high'); assert.equal(app.images.settingsView().defaultSize, '1536x1024');
+  assert.ok(!('maxOutputs' in app.images.settingsView()));
+  await app.close(); app = createApp(options); app.service.schedule = () => {};
+  const restarted = await app.listen();
+  await page.goto(restarted.url); await openQuest();
+  assert.equal(app.images.settingsView().defaultQuality, 'high'); assert.ok(!('maxAttempts' in app.images.settingsView()));
+  assert.equal(await page.locator('.message-image').count(), 3);
+  for (const image of await page.locator('.message-image img').all()) assert.equal(await image.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0), true);
+  assert.equal(errors.length, 0);
+  console.log('PASS isolated service/data, three compact previews, full-size viewer/download, navigation, simplified Settings with configurable quality/size and real service restart; zero paid calls.');
+} finally { await browser?.close(); await app.close(); await rm(dataDir, { recursive: true, force: true }); }

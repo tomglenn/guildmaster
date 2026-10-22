@@ -1,4 +1,5 @@
 import { connectionTools } from './engine/connection-tools.ts';
+import { imageTools } from './engine/image-tools.ts';
 import { readFile, mkdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -114,7 +115,7 @@ async function run(): Promise<void> {
   let waitToolCallId: string | undefined;
   let waitResultSaved = false;
   let pendingYield: Promise<void> | undefined;
-  const customTools = [...connectionTools(spec), questions.tool(spec.role === 'delegate'), ...(guidance && (builtins.includes('read') || builtins.includes('bash')) ? guidanceTools(spec, guidance, emit) : []), ...(spec.role === 'guildmaster' ? guildmasterTools(spec) : canDelegate ? guildmasterTools(spec).filter(tool => ['list_projects', 'inspect_project', 'resolve_project_repository'].includes(tool.name)) : []),
+  const customTools = [...connectionTools(spec), ...imageTools(spec), questions.tool(spec.role === 'delegate'), ...(guidance && (builtins.includes('read') || builtins.includes('bash')) ? guidanceTools(spec, guidance, emit) : []), ...(spec.role === 'guildmaster' ? guildmasterTools(spec) : canDelegate ? guildmasterTools(spec).filter(tool => ['list_projects', 'inspect_project', 'resolve_project_repository'].includes(tool.name)) : []),
     ...(canDelegate ? delegationTools(spec, id => { waitToolCallId = id; },addWorkspaceGuidance) : [])];
   const created = await createAgentSession({
     cwd: spec.cwd, agentDir, modelRuntime, resourceLoader, sessionManager: manager,

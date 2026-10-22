@@ -20,6 +20,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS quests (id TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, questId TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS images (id TEXT PRIMARY KEY, questId TEXT NOT NULL, name TEXT NOT NULL, mimeType TEXT NOT NULL, data BLOB NOT NULL);
+      CREATE TABLE IF NOT EXISTS image_jobs (questId TEXT NOT NULL, commandId TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(questId,commandId));
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, questId TEXT NOT NULL, type TEXT NOT NULL, detail TEXT NOT NULL, createdAt INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, questId TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS commands (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, response TEXT NOT NULL);
@@ -144,7 +145,7 @@ export class Store {
       for(const row of this.db.prepare('SELECT id,response FROM commands').all() as {id:string;response:string}[]) {
         if(refers(JSON.parse(row.response)))this.db.prepare('UPDATE commands SET response=? WHERE id=?').run(JSON.stringify({permanentlyDeleted:true}),row.id);
       }
-      for(const table of ['messages','images','events','requests','runs','deliveries','tool_calls'])for(const id of ids)this.db.prepare(`DELETE FROM ${table} WHERE questId=?`).run(id);
+      for(const table of ['messages','images','image_jobs','events','requests','runs','deliveries','tool_calls'])for(const id of ids)this.db.prepare(`DELETE FROM ${table} WHERE questId=?`).run(id);
       for(const id of ids)this.db.prepare('DELETE FROM quests WHERE id=?').run(id);
     });
   }
