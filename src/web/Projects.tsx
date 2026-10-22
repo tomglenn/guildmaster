@@ -141,6 +141,7 @@ export default function Projects({ projects, onSave, onGuildmaster, onAction }: 
         <button className="button" onClick={() => { archiveDialog.current?.close(); void archiveAction('archive'); }}>Archive project</button>
       </div>
     </dialog>
+    <div className="view-header">
     <div className="quest-header">
       <Breadcrumbs current={editor === 'repository' ? 'Repository' : 'Project'} disabled={busy} items={[
         { label: 'Projects', onClick: editor === 'new' ? closeEditor : directory },
@@ -161,6 +162,7 @@ export default function Projects({ projects, onSave, onGuildmaster, onAction }: 
       <button className={tab === 'repositories' ? 'selected' : ''} aria-pressed={tab === 'repositories'} onClick={() => setTab('repositories')}><Icon name="folder" size={15}/>Repositories<span>{current.repositories.length}</span></button>
       <button className={tab === 'config' ? 'selected' : ''} aria-pressed={tab === 'config'} onClick={() => setTab('config')}><Icon name="settings" size={15}/>Configuration</button>
     </div>}
+    </div>
     <div className="project-detail-scroll page-scroll" ref={content}>
       {error && <div className="inline-error" role="alert">{error}</div>}
       {editor ? <form className="project-focus-editor" onSubmit={event => { event.preventDefault(); void save(); }}>

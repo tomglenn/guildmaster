@@ -1,0 +1,231 @@
+/* THE GUILDHALL — brass, oxblood leather, and quiet parchment work surfaces. */
+@font-face{font-family:Cinzel;src:url('/fonts/cinzel-semibold.ttf') format('truetype');font-weight:600;font-display:swap}
+@font-face{font-family:Cormorant;src:url('/fonts/cormorant-garamond-semibold.ttf') format('truetype');font-weight:600;font-display:swap}
+.guildhall-brand,.guildhall-welcome{display:none}
+.theme-options{grid-template-columns:repeat(5,minmax(0,1fr));max-width:850px}
+.theme-mini[data-tone="guildhall"]{background:url('/themes/guildhall.jpg') 70% center/cover}
+.theme-mini[data-tone="guildhall"] .theme-mini-sidebar{background:#35261c}
+.theme-mini[data-tone="guildhall"] i{background:#f1e3bf}
+:root[data-theme="guildhall"]{
+ color-scheme:light;--canvas:#eee2c8;--surface:#f7eed8;--surface-raised:#e5d4b0;--surface-inset:#eee2c7;--sidebar:#302118;--user-surface:#e6d5b6;
+ --text:#33261e;--secondary:#514334;--muted:#6d5b47;--line:#bca37c;--accent:#7a352c;--primary:#73332f;--primary-hover:#8c453c;--on-primary:#fff1d9;
+ --warning:#805516;--success:#346044;--danger:#a13b32;--info:#2e6371;--code-surface:#e5d8bd;--code-text:#3e3024;
+ --display:Cinzel,Georgia,serif;--workspace-frame:#9d8055;
+ --workspace-header:linear-gradient(115deg,#38201cfb,#261915fa);
+ --workspace-panel:radial-gradient(ellipse at top left,#fff9e9aa,transparent 65%),linear-gradient(100deg,#e8d9b9,#f4ead3 48%,#ecdfc2);
+}
+:root[data-theme="guildhall"] ::selection{background:#74352c;color:#fff1d9}
+:root[data-theme="guildhall"] .app-shell{padding:16px;gap:18px;grid-template-columns:236px minmax(0,1fr);isolation:isolate;position:relative;background:#251b15}
+:root[data-theme="guildhall"] .app-shell:before{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,#17100a66,transparent 75%),url('/themes/guildhall.jpg') 65% center/cover}
+:root[data-theme="guildhall"] .main{background:transparent;--page-padding:28px;--header-padding:24px;--page-title-size:28px}
+:root[data-theme="guildhall"] :is(.sidebar,.page-header-sticky,.view-header,.gm-heading){color-scheme:dark;--text:#f4e7cd;--secondary:#daccb2;--muted:#c5b08c;--line:#80663f;--accent:#e7bf75;--primary:#d4ae6b;--primary-hover:#efd29a;--on-primary:#302014;--surface:#38291f;--surface-raised:#4d3829;--warning:#edc17a;--success:#b6d4a3;--danger:#ffb4a2;--info:#abd0da;color:var(--text)}
+:root[data-theme="guildhall"] :is(.page-header-sticky,.view-header,.gm-heading){box-shadow:inset 0 0 0 4px #241810,inset 0 0 0 5px #b8995e35,0 5px 18px #0003}
+:root[data-theme="guildhall"] :is(.page-heading h1,.gm-heading h1,.quest-title-row h1){font:600 28px/1.25 var(--display);letter-spacing:-.5px}
+:root[data-theme="guildhall"] :is(.filter-tabs,.detail-tabs) button{font-size:13px;letter-spacing:.2px}
+:root[data-theme="guildhall"] .sidebar{background:linear-gradient(110deg,#302219,#251b15);border:1px solid #a1844d70;box-shadow:inset 0 0 0 5px #160f0940,0 16px 50px #0005}
+:root[data-theme="guildhall"] .brand{display:block;padding:24px 14px;margin-bottom:16px;border-bottom:1px solid #b8995e50;text-align:center}
+:root[data-theme="guildhall"] :is(.brand-logo,.brand-version){display:none}
+:root[data-theme="guildhall"] .guildhall-brand{display:flex;flex-direction:column;align-items:center;gap:10px;font:600 21px var(--display);color:#f4dfaf}
+.guild-crest{width:68px;height:80px;filter:drop-shadow(0 4px 3px #0005)}
+:root[data-theme="guildhall"] .guildhall-brand small{font:10px/1.6 system-ui,sans-serif;letter-spacing:1.6px;text-transform:uppercase;color:#ccb78e}
+:root[data-theme="guildhall"] .sidebar-main{padding:0 14px}
+:root[data-theme="guildhall"] .nav-item{border:1px solid transparent;border-radius:3px;padding:13px 10px;margin-bottom:5px;font:600 13px/1.4 var(--display);gap:9px;box-shadow:none;color:var(--secondary)}
+:root[data-theme="guildhall"] .nav-item.active{background:linear-gradient(105deg,#dfc08a,#b99351);color:#302014;border-color:#f4dba5;box-shadow:inset 0 0 0 3px #9a743d,inset 0 0 0 4px #e3c38a,0 3px 7px #0004}
+:root[data-theme="guildhall"] .nav-item:hover:not(.active){background:#dbba7930;color:#fff0ce}
+:root[data-theme="guildhall"] .nav-count{color:inherit}
+:root[data-theme="guildhall"] .nav-item.active svg{color:inherit}
+:root[data-theme="guildhall"] .recent-quest{border-radius:3px;border:1px solid #b8995e30;background:#160f0940;padding:12px;margin-bottom:9px;gap:9px;box-shadow:none}
+:root[data-theme="guildhall"] .recent-quest-title{font-size:13px;font-weight:600;line-height:1.5;color:#f0e2c9}
+:root[data-theme="guildhall"] .recent-quest-project{font-size:11px;color:#c5b08c}
+:root[data-theme="guildhall"] .recent-quest .sidebar-status{font-size:10px;padding:3px 5px;border-radius:2px}
+:root[data-theme="guildhall"] .recent-quest:hover{background:#5a402a80;border-color:#b8995e70}
+:root[data-theme="guildhall"] .quests-label{margin:22px 0 12px;font-size:11px;letter-spacing:.3px}
+:root[data-theme="guildhall"] .recent-quest.active{border-color:#b8995e80;background:#e9cb8d18;box-shadow:none}
+:root[data-theme="guildhall"] .sidebar-bottom{border-top:1px solid #b8995e50;margin:0 20px;padding:16px 0}
+:root[data-theme="guildhall"] .button{border-radius:3px;box-shadow:inset 0 1px #ffffff18}
+:root[data-theme="guildhall"] .button.primary{border:1px solid color-mix(in srgb,var(--primary) 70%,var(--text));box-shadow:inset 0 0 0 2px #ffffff15,0 2px 3px #0002}
+:root[data-theme="guildhall"] .quest-grid{gap:22px}
+:root[data-theme="guildhall"] .quest-card{position:relative;border:1px solid #b69b6c;border-radius:3px;background:var(--workspace-panel);box-shadow:0 6px 16px #0004,inset 0 0 0 5px #e5d5b5,inset 0 0 0 6px #bca37c66}
+:root[data-theme="guildhall"] .quest-card:hover{border-color:#e5bc71;box-shadow:0 8px 24px #0005,inset 0 0 0 5px #e5d5b5,inset 0 0 0 6px #9f784c}
+:root[data-theme="guildhall"] .quest-card-open{padding:26px;border-radius:3px}
+:root[data-theme="guildhall"] .quest-card-top{margin-bottom:22px}
+:root[data-theme="guildhall"] .quest-monogram{width:40px;height:40px;border-radius:50%;background:radial-gradient(circle at 35% 25%,#a55946,#652b25);color:#f0cc91;border:3px double #d29967;box-shadow:0 2px 3px #55341f55,inset 0 0 0 3px #7c382e}
+:root[data-theme="guildhall"] .quest-card h2{font:600 22px/1.25 var(--display);letter-spacing:-.4px;margin-bottom:14px}
+:root[data-theme="guildhall"] .quest-card-footer{border-top:1px solid #bca37c99;padding-top:16px}
+:root[data-theme="guildhall"] .badge{padding:5px 8px;line-height:1.35;border:1px solid color-mix(in srgb,currentColor 35%,transparent);border-radius:2px;background:color-mix(in srgb,currentColor 6%,transparent);font-size:11px}
+:root[data-theme="guildhall"] .board-footnote{background:var(--workspace-header);color:#e1d1b2;padding:12px;border:1px solid #9d8055;margin-top:24px}
+:root[data-theme="guildhall"] :is(.gm-composer,.quest-composer){background:var(--workspace-panel);padding-top:18px;padding-bottom:18px}
+:root[data-theme="guildhall"] .composer{border:1px solid #a68b60;background:#fbf3df;border-radius:3px;box-shadow:0 2px 5px #77512b18}
+:root[data-theme="guildhall"] .composer:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px #73332f22}
+:root[data-theme="guildhall"] .message-user{background:#e5d4b5;border:1px solid #bca37c;border-radius:3px}
+:root[data-theme="guildhall"] .message-meta strong{font-family:var(--display);font-size:14px}
+:root[data-theme="guildhall"] .markdown blockquote{border:1px solid #bca37c;padding:12px 18px;background:#e8d9b9}
+:root[data-theme="guildhall"] .code-block{border-radius:3px}
+:root[data-theme="guildhall"] :is(dialog,.model-picker-popover){background:var(--workspace-panel);border:1px solid #a1844d;border-radius:4px;box-shadow:0 15px 70px #0006}
+:root[data-theme="guildhall"] dialog::backdrop{background:#20170d99;backdrop-filter:blur(5px)}
+:root[data-theme="guildhall"] .gm-scroll:has(.welcome){background:linear-gradient(90deg,#160e09c9,transparent 95%)}
+:root[data-theme="guildhall"] .welcome{max-width:none;min-height:100%;padding:36px 46px;align-items:flex-start;text-align:left;gap:28px}
+:root[data-theme="guildhall"] .welcome>h2{display:none}
+:root[data-theme="guildhall"] .guildhall-welcome{display:block;color:#f9ebcc;text-shadow:0 2px 14px #0008}
+:root[data-theme="guildhall"] .guild-welcome-crest{display:none}
+:root[data-theme="guildhall"] .guild-welcome-kicker{font:600 11px var(--display);letter-spacing:2px;color:#e8c78b}
+:root[data-theme="guildhall"] .guildhall-welcome h2{font:600 clamp(58px,6.5vw,90px)/.95 Cormorant,Georgia,serif;letter-spacing:-1px;margin:22px 0;color:#fff0ce;max-width:none}
+:root[data-theme="guildhall"] .guildhall-welcome p{font-size:15px;line-height:1.8;color:#e9d9bb;margin:22px 0}
+:root[data-theme="guildhall"] .guild-welcome-flourish{display:block;color:#d7b472;font-size:20px}
+:root[data-theme="guildhall"] .welcome-suggestions{justify-content:flex-start;gap:12px;width:100%;max-width:800px}
+:root[data-theme="guildhall"] .welcome-suggestions button{flex:1;min-width:0;border:1px solid #c5a264;border-radius:3px;background:linear-gradient(110deg,#433025ef,#241912f5);color:#f3dfb6;padding:18px;font:600 14px/1.4 var(--display);box-shadow:inset 0 0 0 3px #a8884930}
+:root[data-theme="guildhall"] .welcome-suggestions button:hover{background:#64452b;color:#fff1d3;border-color:#f5d69b}
+@media(max-width:1100px) and (min-width:651px){
+ :root[data-theme="guildhall"] .app-shell{grid-template-columns:202px minmax(0,1fr);gap:12px;padding:12px}
+ :root[data-theme="guildhall"] .guildhall-brand{font-size:18px}
+ :root[data-theme="guildhall"] .welcome{padding:32px 24px}
+ .theme-options{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:800px) and (min-width:651px){:root[data-theme="guildhall"] .quest-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:650px){
+ .theme-options{grid-template-columns:repeat(2,minmax(0,1fr))}
+ :root[data-theme="guildhall"] .app-shell{padding:0;gap:0;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+ :root[data-theme="guildhall"] .sidebar{display:grid;grid-template-columns:minmax(0,1fr) auto;padding:12px;gap:12px;border:0;border-bottom:1px solid #a1844d}
+ :root[data-theme="guildhall"] .brand{padding:0;margin:0;border:0;width:fit-content}
+ :root[data-theme="guildhall"] .guildhall-brand{flex-direction:row;font-size:19px;gap:8px}
+ :root[data-theme="guildhall"] .guildhall-brand .guild-crest{width:25px;height:30px}
+ :root[data-theme="guildhall"] .guildhall-brand small{display:none}
+ :root[data-theme="guildhall"] .sidebar-main{grid-column:1/-1;grid-row:2;padding:0;min-width:0}
+ :root[data-theme="guildhall"] .sidebar-main nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}
+ :root[data-theme="guildhall"] .nav-item{font:600 11px/1.4 system-ui,sans-serif;padding:11px 2px;margin:0;gap:3px;justify-content:center}
+ :root[data-theme="guildhall"] .nav-item>svg{display:none}
+ :root[data-theme="guildhall"] .nav-count{font-size:9px;margin-left:0;padding:0}
+ :root[data-theme="guildhall"] .sidebar-bottom{grid-column:2;grid-row:1;margin:0;padding:0;border:0}
+ :root[data-theme="guildhall"] .main{--page-padding:16px;--header-padding:18px}
+ :root[data-theme="guildhall"] :is(.page-heading h1,.gm-heading h1,.quest-title-row h1){font-size:23px}
+ :root[data-theme="guildhall"] .welcome{padding:30px 22px}
+ :root[data-theme="guildhall"] .guildhall-welcome h2{font-size:60px}
+ :root[data-theme="guildhall"] .guild-welcome-kicker{font-size:9px;letter-spacing:1px}
+ :root[data-theme="guildhall"] .welcome-suggestions button{flex:auto;padding:14px}
+ :root[data-theme="guildhall"] .quest-card h2{font-size:20px}
+}
+/* Letter folio: decoration stays outside the scrolling, selectable writing area. */
+:root[data-theme="guildhall"] .quest-conversation-wrap:has(.conversation){
+ --workspace-panel:url('/themes/vellum-grain.svg'),radial-gradient(ellipse at 50% 40%,#fff9e5 0%,#f2e8cd 65%,#ddc9a0 100%);
+ padding:34px 28px;
+ box-shadow:inset 0 0 18px #9c783222;
+}
+:root[data-theme="guildhall"] .quest-conversation-wrap:has(.conversation)::before{
+ content:'';position:absolute;inset:12px;pointer-events:none;z-index:1;
+ border:1px solid #98703965;border-radius:10px;outline:0;
+ clip-path:polygon(0 0,calc(50% - 15px) 0,calc(50% - 15px) 2px,calc(50% + 15px) 2px,calc(50% + 15px) 0,100% 0,100% 100%,0 100%);
+}
+:root[data-theme="guildhall"] .quest-conversation-wrap:has(.conversation)::after{
+ content:'✦';position:absolute;top:3px;left:calc(50% - 15px);width:30px;text-align:center;
+ color:#987039;background:transparent;font-size:15px;line-height:20px;pointer-events:none;
+}
+:root[data-theme="guildhall"] .quest-conversation-wrap .conversation{padding-top:22px;padding-bottom:28px}
+@media(max-width:650px){
+ :root[data-theme="guildhall"] .quest-conversation-wrap:has(.conversation){padding:30px 20px}
+ :root[data-theme="guildhall"] .quest-conversation-wrap:has(.conversation)::before{inset:8px}
+ :root[data-theme="guildhall"] .quest-conversation-wrap:has(.conversation)::after{top:0}
+ :root[data-theme="guildhall"] .quest-conversation-wrap .conversation{padding-left:10px;padding-right:10px}
+}
+/* Materials have distinct jobs: leather holds commissions, oak supports writing,
+   and rag paper carries text. Shared view geometry stays in workspace-themes.css. */
+:root[data-theme="guildhall"]{
+ --guild-leather:linear-gradient(#210d0899,#210d0899),url('/themes/guild-leather.jpg') center/680px repeat;
+ --guild-oak:linear-gradient(#20100655,#20100655),url('/themes/guild-oak.jpg') center/cover no-repeat;
+ --guild-paper:linear-gradient(100deg,#f0dfbd77,#fff6e399 20%,#fff8e5aa 55%,#efddba77),url('/themes/guild-paper.jpg') center/760px repeat;
+ --workspace-header:var(--guild-leather);
+ --workspace-panel:var(--guild-paper);
+}
+:root[data-theme="guildhall"] .sidebar{
+ background:linear-gradient(#1c130c99,#1c130cb0),url('/themes/guild-oak.jpg') center/760px repeat;
+ border:1px solid #75522d;box-shadow:inset 2px 0 3px #e9bd6d40,inset -4px 0 6px #10070099,0 12px 32px #0009;
+}
+:root[data-theme="guildhall"] .brand{
+ background:var(--guild-leather);margin:10px 10px 20px;padding:22px 8px;
+ border:1px solid #b1854c80;border-radius:3px 3px 34% 34% / 3px 3px 12% 12%;
+ box-shadow:0 5px 9px #0008,inset 0 0 0 5px #2d151840;
+}
+:root[data-theme="guildhall"] .sidebar-main{scrollbar-width:thin;scrollbar-color:#997347 #22180f}
+:root[data-theme="guildhall"] .recent-quest{background:linear-gradient(#160c06b8,#160c06b8),url('/themes/guild-oak.jpg') center/560px;border-color:#bd96533d;box-shadow:0 1px 2px #0006}
+:root[data-theme="guildhall"] .recent-quest:hover{background:#533b26;border-color:#c6a16c}
+:root[data-theme="guildhall"] .recent-quest.active{background:var(--guild-leather);border-color:#d5b477}
+:root[data-theme="guildhall"] :is(.page-header-sticky,.view-header,.gm-heading){
+ border-radius:4px;box-shadow:inset 0 1px 2px #eab78560,inset 0 -3px 4px #13060890,0 5px 12px #0007;
+}
+:root[data-theme="guildhall"] :is(.page-header-sticky,.view-header,.gm-heading)::after{
+ content:'';position:absolute;inset:7px;border:1px dashed #d4af7260;border-radius:2px;pointer-events:none;
+}
+:root[data-theme="guildhall"] :is(.page-heading h1,.gm-heading h1,.quest-title-row h1){text-shadow:0 2px 1px #180905,0 -1px #e8c08330}
+/* Real notice boards, with a timber rim and individually pinned paper sheets. */
+:root[data-theme="guildhall"] .quest-grid{
+ position:relative;padding:28px;gap:28px;border:10px solid #51361e;border-radius:3px;
+ background:var(--guild-leather);box-shadow:inset 0 0 0 1px #dcaf6d6b,inset 0 3px 14px #120605bd,0 10px 22px #0008;
+ border-image:url('/themes/guild-oak.jpg') 40 / 10px stretch;
+}
+:root[data-theme="guildhall"] .quest-card{
+ background:var(--guild-paper);border:0;border-radius:2px 3px 1px 3px;
+ box-shadow:1px 2px 1px #b69a69,2px 5px 2px #20100755,0 12px 15px -4px #140703bb;
+}
+:root[data-theme="guildhall"] .quest-card:hover{
+ background:var(--guild-paper);box-shadow:1px 2px 1px #b69a69,2px 5px 2px #20100755,0 15px 20px -3px #140703dd;
+}
+:root[data-theme="guildhall"] .quest-card::before{
+ content:'';position:absolute;z-index:1;top:9px;left:calc(50% - 5px);width:10px;height:10px;border-radius:50%;pointer-events:none;
+ background:radial-gradient(circle at 35% 28%,#ffe3a0 0%,#c49b50 28%,#6a431c 63%,#3b2410 75%);box-shadow:1px 3px 3px #29150880;
+}
+:root[data-theme="guildhall"] .quest-card::after{
+ content:'';position:absolute;bottom:-3px;left:0;right:0;height:5px;pointer-events:none;
+ background:var(--guild-paper);clip-path:polygon(0 0,100% 0,100% 60%,97% 45%,91% 85%,85% 50%,78% 80%,70% 45%,63% 70%,55% 40%,46% 85%,37% 55%,29% 80%,20% 45%,12% 70%,5% 40%,0 60%);
+}
+:root[data-theme="guildhall"] .quest-card-open{padding:30px 24px 24px}
+:root[data-theme="guildhall"] .quest-card h2{font:600 30px/1.05 Cormorant,Georgia,serif;letter-spacing:-.3px}
+:root[data-theme="guildhall"] .quest-monogram{
+ border-radius:43% 48% 44% 49%;border:2px solid #73332b;background:radial-gradient(circle at 32% 22%,#b5614f,#7e332c 65%,#56251f);
+ box-shadow:inset 0 0 0 3px #aa5b46,inset 0 0 0 4px #57231d,1px 3px 3px #57301f60;color:#efc29a;
+}
+:root[data-theme="guildhall"] .quest-card-top{margin-bottom:18px}
+:root[data-theme="guildhall"] .quest-card-footer{border-top:1px solid #9b743f55}
+/* A paper folio laid onto a desk. The paper scrolls; the desk and frame stay put. */
+:root[data-theme="guildhall"] .main .quest-conversation-wrap:has(.conversation){
+ --workspace-panel:var(--guild-paper);background:var(--guild-oak);padding:24px;
+ box-shadow:inset 0 1px 2px #f1c78860,inset 0 -1px 3px #241307,0 8px 20px #0006;
+}
+:root[data-theme="guildhall"] .quest-conversation-wrap:has(.conversation)>:is(.gm-scroll,.quest-scroll){
+ background:var(--guild-paper);border:20px solid transparent;border-radius:2px;
+ box-shadow:0 5px 10px #1e0e0799,inset 0 0 20px #aa7b3628;
+}
+:root[data-theme="guildhall"] .quest-conversation-wrap:has(.conversation)::before{inset:36px;border-radius:3px}
+:root[data-theme="guildhall"] .quest-conversation-wrap:has(.conversation)::after{top:27px}
+:root[data-theme="guildhall"] .quest-conversation-wrap .conversation{padding:24px 14px}
+:root[data-theme="guildhall"] :is(.gm-composer,.quest-composer){background:var(--guild-oak);padding:0 24px 24px}
+:root[data-theme="guildhall"] :is(.composer,.archived-notice){background:var(--guild-paper);box-shadow:0 3px 6px #1e0e0780;border:1px solid #cbb58b;padding:14px;border-radius:2px}
+:root[data-theme="guildhall"] .composer-meta{color:#ead8b8;padding-top:8px;text-shadow:0 1px 2px #241307}
+:root[data-theme="guildhall"] .composer-meta :is(button,span){color:inherit}
+:root[data-theme="guildhall"] .message-user{background:linear-gradient(#e3d0a999,#e3d0a999),url('/themes/guild-paper.jpg') center/760px;border:0;border-radius:2px;box-shadow:0 1px 1px #a68955,0 3px 6px #73532b20}
+:root[data-theme="guildhall"] .markdown :is(pre,table){background:#fff8e640}
+:root[data-theme="guildhall"] .board-footnote{border:0;border-radius:3px;box-shadow:0 3px 7px #0005}
+@media(max-width:1100px) and (min-width:651px){
+ :root[data-theme="guildhall"] .quest-grid{padding:20px;gap:22px}
+ :root[data-theme="guildhall"] .quest-card-open{padding:28px 18px 20px}
+}
+@media(max-width:650px){
+ :root[data-theme="guildhall"] .brand{background:none;margin:0;padding:0;border:0;box-shadow:none;border-radius:0}
+ :root[data-theme="guildhall"] .quest-grid{padding:18px 14px;gap:24px;border-width:6px;border-image-width:6px}
+ :root[data-theme="guildhall"] .quest-card-open{padding:28px 18px 20px}
+ :root[data-theme="guildhall"] .quest-card h2{font-size:27px}
+ :root[data-theme="guildhall"] .main .quest-conversation-wrap:has(.conversation){padding:12px}
+ :root[data-theme="guildhall"] .quest-conversation-wrap:has(.conversation)::before{inset:20px}
+ :root[data-theme="guildhall"] .quest-conversation-wrap:has(.conversation)::after{top:11px}
+ :root[data-theme="guildhall"] .quest-conversation-wrap .conversation{padding:16px 6px}
+ :root[data-theme="guildhall"] :is(.gm-composer,.quest-composer){padding:0 12px 12px}
+}
+
+:root[data-theme="guildhall"] :is(.view-header,.gm-heading){position:relative}
+
+:root[data-theme="guildhall"] .composer-meta :is(.composer-shortcut,.composer-hint){color:#f1dfc0}
+:root[data-theme="guildhall"] .main .quest-content:has(>.quest-conversation-wrap){background:var(--guild-oak)}
+:root[data-theme="guildhall"] .main .quest-content>.quest-conversation-wrap:has(.conversation),
+:root[data-theme="guildhall"] .main .quest-content>.quest-composer{background:transparent}
+
+@media(max-width:650px){
+ :root[data-theme="guildhall"] .quest-conversation-wrap:has(.conversation)>:is(.gm-scroll,.quest-scroll){border-width:16px}
+}
