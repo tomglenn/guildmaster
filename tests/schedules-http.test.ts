@@ -24,6 +24,7 @@ test('schedule HTTP management is user-only, drafts are Guildmaster-only, and de
  const cookie=(await request('/api/bootstrap')).headers['set-cookie'].split(';')[0],human={cookie};
  const gm=(await app.service.create({objective:'Coordinate',workspaceMode:'none',tools:['read'],model:'fixture/model',commandId:'gm'},'guildmaster')).quest;
  const lead=(await app.service.create({objective:'Read sources',workspaceMode:'none',tools:['read'],commandId:'lead'})).quest;lead.status='running';app.store.save(lead);
+ gm.status='running';app.store.save(gm);app.service.gmRunTokens.set('gm-token',gm.activeRunId!);
  app.service.gmTokens.set('gm-token',gm.id);app.service.workerTokens.set('lead-token',{questId:lead.id,runId:lead.activeRunId!});
  const gmAuth={authorization:'Bearer gm-token'},leadAuth={authorization:'Bearer lead-token'};
  const input={name:'Brief',objective:'Summarize selected sources only.',recurrence:{days:[1,2,3,4,5],time:'08:30',timezone:'Europe/London'},missed:'latest',projectId:null,workspacePolicy:'shared',tools:['read'],commandId:'config'};

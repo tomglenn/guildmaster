@@ -7,6 +7,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { Store } from './store.ts';
+import { InlineReads } from './inline-reads.ts';
 import { AppError, ALLOWED_TOOLS, DEFAULT_TOOLS, MAX_SUBAGENTS, writes } from '../domain/types.ts';
 import type { IsolationRequest, Quest, CreateQuest, WorkspaceMode, DelegationSource, QuestWorkspace, LiveMessage, MessagePresentation, PreparedWorkspace } from '../domain/types.ts';
 import type { Delivery } from './store.ts';
@@ -38,8 +39,10 @@ function delegatedPrompt(brief: string, source?: DelegationSource): string {
 export class QuestService extends EventEmitter {
   store: Store; dataDir: string; defaultWorkspace: string; workerPath: string;
   live = new Map<string, Live>(); serviceUrl = ''; serviceToken = ''; gmTokens = new Map<string, string>();
+  gmRunTokens = new Map<string,string>();
   partialMessages = new Map<string, LiveMessage>();
   connections?: ConnectionManager;
+  inlineReads: InlineReads;
   connectionTokens = new Map<string,{questId:string;runId:string;grants:ConnectionGrant[];controller:AbortController}>();
   workerTokens = new Map<string, { questId: string; runId: string }>();
   imageTokens = new Map<string, { questId: string; runId: string; controller: AbortController }>();
@@ -52,6 +55,8 @@ export class QuestService extends EventEmitter {
   private pendingDelegates = new Map<string,number>();
   constructor(options: { store: Store; dataDir: string; defaultWorkspace?: string; workerPath?: string; maxWorkers?: number; connections?: ConnectionManager }) {
     super(); this.connections=options.connections; this.store = options.store; this.dataDir = options.dataDir;
+    this.inlineReads = new InlineReads(this.store);
+    this.inlineReads.onExhausted=this.inlineExhausted;
     this.defaultWorkspace = directory(options.defaultWorkspace ?? process.cwd());
     this.workerPath = options.workerPath ?? workerDefault;
     this.maxWorkers = options.maxWorkers ?? Number(process.env.GUILDMASTER_MAX_WORKERS ?? 13);
@@ -133,6 +138,32 @@ export class QuestService extends EventEmitter {
     const run = gm.activeRunId ? this.store.getRun(gm.activeRunId) : undefined;
     if (!run || run.questId !== gm.id || typeof run.data.prompt !== 'string') throw new AppError('The originating Guildmaster run is no longer available.',409);
     return { questId: gm.id, runId: gm.activeRunId!, text: run.data.sourcePrompt ?? run.data.prompt };
+  }
+  async delegateRequest(gmId:string, expectedRunId:string, input:Record<string,unknown>) {
+    if(Object.keys(input).some(key=>key!=='commandId'))throw new AppError('Only commandId is accepted. The service owns the handoff scope.');
+    text(input.commandId,'Command ID',200);
+    const authority=this.inlineReads.handoff(gmId,expectedRunId);
+    // Origin identity, not model-selected command IDs, deduplicates retries and resumes.
+    const commandId=`inline-handoff:${authority.origin}`;
+    const existing=this.store.command(commandId);
+    if(existing)return existing.response;
+    const gm=this.get(gmId);
+    const guard=()=>{
+      this.inlineReads.handoff(gmId,expectedRunId);
+      if(authority.grant.kind==='repository') {
+        const grant=authority.grant;
+        if(!this.store.projects().some(p=>!p.archivedAt&&p.repositories.some(r=>r.id===grant.repositoryId&&r.path===grant.sourcePath)))throw new AppError('The original repository scope is unavailable. Ask the user to clarify the target.',409);
+      }
+    };
+    const source:DelegationSource={questId:gmId,runId:expectedRunId,text:authority.request};
+    const grant=authority.grant;
+    let scope:Partial<CreateQuest>={workspaceMode:'none'};
+    if(grant.kind==='repository') {
+      const project=this.store.projects().find(p=>!p.archivedAt&&p.repositories.some(r=>r.id===grant.repositoryId&&r.path===grant.sourcePath));
+      if(!project)throw new AppError('The original repository scope is unavailable. Ask the user to clarify the target.',409);
+      scope={projectId:project.id,repositories:[{repositoryId:grant.repositoryId}],workspacePolicy:'isolated',revisions:[{repositoryId:grant.repositoryId,commit:grant.commit}]};
+    }
+    return this.create({...scope,commandId,title:authority.request.replace(/\s+/g,' ').trim().slice(0,120)||'Delegated user request',objective:authority.request,model:gm.model,tools:[...gm.tools]},'quest',undefined,source,undefined,guard);
   }
   changed(id: string) {
     const quest = this.store.get(id);
@@ -561,11 +592,11 @@ export class QuestService extends EventEmitter {
     const workspace = mode === 'worktree' && kind === 'quest' ? await this.addWorktree(source, id, undefined, created) : { workspacePath: directory(source) };
     return { project: undefined, workspaces: undefined, workspaceMode: mode as WorkspaceMode, sourcePath: directory(source), branch: undefined, ...workspace };
   }
-  private async createIsolated(input: CreateQuest, originalInput?: Record<string, unknown>, sourceRequest?: DelegationSource, images: ImageUpload[] = [], dispatch?: ScheduledDispatch) {
+  private async createIsolated(input: CreateQuest, originalInput?: Record<string, unknown>, sourceRequest?: DelegationSource, images: ImageUpload[] = [], dispatch?: ScheduledDispatch, guard?:()=>void) {
     const payload = sourceRequest ? {input,source:sourceRequest} : originalInput ?? input;
     return this.setup(input.commandId,'create:quest',payload,async () => {
       const snapshot = await this.serialize(async () => {
-        dispatch?.assertActive();
+        dispatch?.assertActive();guard?.();
         const objective = imageMessage(input.objective,images,'Objective');
         const tools = input.tools ?? DEFAULT_TOOLS;
         if (!Array.isArray(tools) || tools.some(t => !ALLOWED_TOOLS.includes(t))) throw new AppError('Unknown tool capability.');
@@ -587,7 +618,7 @@ export class QuestService extends EventEmitter {
       });
       const assertActive = () => {
         if (this.stopping) throw new AppError('Service is stopping.',503);
-        dispatch?.assertActive();
+        dispatch?.assertActive();guard?.();
         if (sourceRequest) {
           const gm = this.get(sourceRequest.questId);
           if (gm.activeRunId !== sourceRequest.runId || !['running','awaiting_input'].includes(gm.status)) throw new AppError('The originating request stopped during workspace preparation.',409);
@@ -625,15 +656,15 @@ export class QuestService extends EventEmitter {
       } finally {if (!saved) await prepared.cleanup();}
     });
   }
-  async create(input: CreateQuest, kind: Quest['kind'] = 'quest', originalInput?: Record<string, any>, sourceRequest?: DelegationSource, dispatch?: ScheduledDispatch) {
+  async create(input: CreateQuest, kind: Quest['kind'] = 'quest', originalInput?: Record<string, any>, sourceRequest?: DelegationSource, dispatch?: ScheduledDispatch, guard?:()=>void) {
     const images = validateImages(input.images);
     if (input.workspacePolicy !== undefined && !['shared','isolated'].includes(input.workspacePolicy)) throw new AppError('Unknown workspace policy.');
-    if (kind === 'quest' && input.workspacePolicy === 'isolated') return this.createIsolated(input,originalInput,sourceRequest,images,dispatch);
+    if (kind === 'quest' && input.workspacePolicy === 'isolated') return this.createIsolated(input,originalInput,sourceRequest,images,dispatch,guard);
     if (input.revisions !== undefined) throw new AppError('Pinned revisions require isolated workspaces.');
     return this.serialize(async () => {
       const command = this.checkCommand(input.commandId, kind === 'guildmaster' ? 'guildmaster' : 'create:quest', sourceRequest ? {input,source:sourceRequest} : originalInput ?? input);
       if (command.cached) return command.cached;
-      dispatch?.assertActive();
+      dispatch?.assertActive();guard?.();
       if (kind === 'guildmaster' && this.store.list().some(q => q.kind === 'guildmaster' && !q.archivedAt)) throw new AppError('Guildmaster already started in another request. Retry this message.', 409);
       const objective = imageMessage(input.objective, images, 'Objective');
       const tools = input.tools ?? DEFAULT_TOOLS;
@@ -655,7 +686,7 @@ export class QuestService extends EventEmitter {
           const origin = this.get(sourceRequest.questId);
           if (origin.activeRunId !== sourceRequest.runId || !['running','awaiting_input'].includes(origin.status)) throw new AppError('The originating request is no longer active.',409);
         }
-        dispatch?.assertActive();
+        dispatch?.assertActive();guard?.();
         this.checkAvailable(q);
         const prompt = delegatedPrompt(objective, sourceRequest);
         this.store.transaction(() => {
@@ -700,9 +731,11 @@ export class QuestService extends EventEmitter {
       q.guidanceRevision = revision;
     }
     this.clearLive(q.id);
+    const previousInlineOrigin=q.activeRunId ? this.inlineReads.origin(q.activeRunId) : this.store.lastRun(q.id)?.id ? this.inlineReads.origin(this.store.lastRun(q.id)!.id) : undefined;
     q.runCount++; q.status = 'queued'; q.error = undefined; q.activeRunId = randomUUID();
     this.store.saveDelivery({ ...(delivery ?? { id: randomUUID(), questId: q.id, commandId, kind: 'prompt', text: prompt, createdAt: Date.now() }), ...(attachments.length ? { attachments } : {}) });
     const message = this.store.message(q.id, 'user', prompt, undefined, { ...presentation, ...(attachments.length ? { attachments } : {}) }); this.store.save(q);
+    if(q.kind==='guildmaster')this.inlineReads.bind(q.activeRunId, presentation?.source==='system'&&previousInlineOrigin ? previousInlineOrigin : message.id);
     const available=this.connections?.snapshot() ?? [];
     const inherited=q.parentQuestId ? this.store.lastRun(q.parentQuestId)?.data.connectionGrants ?? [] : available;
     const connectionGrants=inherited.flatMap(grant=>{const current=available.find(c=>c.connectionId===grant.connectionId&&c.teamId===grant.teamId&&c.userId===grant.userId);return current?[{...current,tools:current.tools.filter(t=>grant.tools.some(old=>old.name===t.name))}]:[];});
@@ -716,6 +749,12 @@ export class QuestService extends EventEmitter {
       id: quest.id, title: quest.title.slice(0,160), status: quest.status, archivedAt: quest.archivedAt, projectName: quest.project?.name,
     })) };
   }
+  private inlineExhausted = (id:string,runId:string,reason:string) => {
+    const q=this.store.get(id);if(q?.activeRunId!==runId)return;
+    const live=this.live.get(id);
+    if(live?.runId===runId&&live.child.connected)live.child.send({type:'inline_exhausted',reason},()=>{});
+    this.store.event(id,'inline_budget',`Inline tools exhausted (${reason}). Return partial coverage without further tools.`);
+  };
   launch(q: Quest, prompt: string) {
     const runId = q.activeRunId!;
     const token = randomUUID();
@@ -723,11 +762,13 @@ export class QuestService extends EventEmitter {
     const imageToken=randomUUID();
     this.imageTokens.set(imageToken,{questId:q.id,runId,controller:new AbortController()});
     const connectionGrants=this.store.getRun(runId)?.data.connectionGrants ?? [];
+    this.inlineReads.onExhausted=this.inlineExhausted;
+    const inline=this.inlineReads.attach(q,runId);
     this.connectionTokens.set(connectionToken,{questId:q.id,runId,grants:connectionGrants,controller:new AbortController()});
     try {
       const specDir = join(this.dataDir, 'runs'); mkdirSync(specDir, { recursive: true });
       const path = join(specDir, `${runId}.json`);
-      if (q.kind === 'guildmaster') this.gmTokens.set(token, q.id);
+      if (q.kind === 'guildmaster') {this.gmTokens.set(token, q.id);this.gmRunTokens.set(token,runId);}
       if (q.kind === 'quest') this.workerTokens.set(token, { questId: q.id, runId });
       writeFileSync(path, JSON.stringify({ questId: q.id, runId, cwd: q.workspacePath, prompt,
         deliveries: this.store.pendingDeliveries(q.id).map(delivery => ({ ...delivery, images: delivery.attachments?.map(attachment => {
@@ -739,26 +780,29 @@ export class QuestService extends EventEmitter {
           ? q.sessionEstablished === true
           : !!q.result || this.store.deliveries(q.id).some(delivery => !!delivery.deliveredAt),
         sessionPath: q.sessionPath, model: q.model, tools: q.tools, instructions: q.instructions,
-        imageToken, connectionToken, connectionGrants, role: q.kind, parentQuestId: q.parentQuestId, questBoard: q.kind === 'guildmaster' ? this.questBoardSnapshot() : undefined, serviceUrl: this.serviceUrl, serviceToken: token, workspaceMode: q.workspaceMode,
+        ...inline, imageToken, connectionToken, connectionGrants, role: q.kind, parentQuestId: q.parentQuestId, questBoard: q.kind === 'guildmaster' ? this.questBoardSnapshot() : undefined, serviceUrl: this.serviceUrl, serviceToken: token, workspaceMode: q.workspaceMode,
         sourcePath: q.sourcePath, guidancePath: q.guidanceRevision ? join(this.dataDir, 'guidance', `${q.guidanceRevision}.json`) : undefined,
         agentDir: join(this.dataDir, 'engine'), project: q.project, workspaces: q.workspaces, workspacePolicy:q.workspacePolicy, isolation:q.isolation, preparedWorkspaces:q.preparedWorkspaces, outputPath:q.outputPath,
       }), { mode: 0o600 });
       const child = fork(this.workerPath, [path], {
         execArgv: ['--experimental-strip-types'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], detached: true,
-        env: { ...process.env, GUILDMASTER_WORKER: '1' },
+        env: { ...process.env, GUILDMASTER_WORKER: '1', GUILDMASTER_INLINE_TOKEN: inline?.inlineToken ?? '' },
       });
       let finish!: () => void; const done = new Promise<void>(resolve => { finish = resolve; });
       const live: Live = { child, runId, startedAt: Date.now(), done }; this.live.set(q.id, live);
+      // A system resume inherits the original human request's exhausted budget.
+      if(q.kind==='guildmaster')try {this.inlineReads.toolBudget(q.id);} catch { /* callback moves worker to final-answer-only */ }
       let stderr = ''; child.stdout?.on('data', () => {});
       child.stderr?.on('data', data => { stderr = (stderr + String(data)).slice(-6000); });
       child.on('message', message => { try { this.workerEvent(q.id, runId, message); } catch (error) { this.fail(q.id,runId,`Invalid worker event: ${error}`); this.stopWorker(q.id); } });
       child.on('error', error => this.fail(q.id, runId, error.message));
       // 'close' also fires when spawn fails before a PID exists; 'exit' does not.
       child.on('close', (code, signal) => {
+        this.inlineReads.revoke(q.id,runId);
         this.clearLive(q.id); this.store.interruptToolCalls(q.id, runId);
         this.revokeImageTokens(q.id);
         this.connectionTokens.get(connectionToken)?.controller.abort();this.connectionTokens.delete(connectionToken);
-        clearTimeout(live.cancelTimer); this.live.delete(q.id); this.gmTokens.delete(token); this.workerTokens.delete(token);
+        clearTimeout(live.cancelTimer); this.live.delete(q.id); this.gmRunTokens.delete(token); this.gmTokens.delete(token); this.workerTokens.delete(token);
         const current = this.get(q.id);
         if (current.activeRunId === runId && ['running','awaiting_input'].includes(current.status)) {
           this.fail(q.id, runId, `Worker stopped before returning a result (${signal ?? code}). ${stderr.slice(-1200)}`, true);
@@ -766,13 +810,21 @@ export class QuestService extends EventEmitter {
         finish(); this.changed(q.id); this.wakeParents(); this.schedule();
       });
       this.changed(q.id);
-    } catch (error) { this.revokeImageTokens(q.id); this.connectionTokens.get(connectionToken)?.controller.abort();this.connectionTokens.delete(connectionToken);this.gmTokens.delete(token); this.workerTokens.delete(token); this.fail(q.id, runId, String(error)); }
+    } catch (error) { this.inlineReads.revoke(q.id,runId);this.revokeImageTokens(q.id);this.connectionTokens.get(connectionToken)?.controller.abort();this.connectionTokens.delete(connectionToken);this.gmRunTokens.delete(token);this.gmTokens.delete(token); this.workerTokens.delete(token); this.fail(q.id, runId, String(error)); }
   }
   workerEvent(id: string, runId: string, raw: unknown) {
     if (!raw || typeof raw !== 'object') return;
     const m = raw as Record<string, any>; const q = this.get(id);
     if (q.activeRunId !== runId || !['running','awaiting_input'].includes(q.status)) return;
-    if (m.type === 'delivered') {
+    if (m.type === 'ready' && q.kind==='guildmaster') {
+      // Re-send after worker initialization: an already-exhausted system resume
+      // must not depend on receiving an IPC command during process bootstrap.
+      try {this.inlineReads.toolBudget(id);} catch {this.inlineExhausted(id,runId,'budget_exhausted');}
+    } else if (m.type === 'inline_round') {
+      if(q.kind==='guildmaster')this.inlineReads.round(id,runId,m.roundId);
+    } else if (m.type === 'inline_round_end') {
+      if(q.kind==='guildmaster')this.inlineReads.roundEnd(id,runId,m.roundId);
+    } else if (m.type === 'delivered') {
       const allowed = new Set(this.store.getRun(runId)?.data.deliveryIds ?? []);
       if (!Array.isArray(m.ids) || m.ids.some((deliveryId: unknown) => typeof deliveryId !== 'string' || !allowed.has(deliveryId))) throw new AppError('Invalid delivery acknowledgment.');
       const ids = new Set<string>(m.ids);
@@ -809,16 +861,18 @@ export class QuestService extends EventEmitter {
       const previous = this.store.toolCall(callId);
       const tool = text(m.tool, 'Tool name', 200);
       if (m.type === 'tool_start') {
+        if(q.kind==='guildmaster')try {this.inlineReads.toolBudget(id);} catch {return;}
         if (!previous) this.store.saveToolCall({ id: callId, questId: id, runId, tool, detail: String(m.detail ?? '').slice(0,4000), status: 'running', startedAt: Date.now() });
       } else {
         this.store.saveToolCall({ id: callId, questId: id, runId, tool, detail: previous?.detail ?? '', startedAt: previous?.startedAt ?? Date.now(),
-          status: m.isError ? 'failed' : 'completed', endedAt: Date.now(), output: String(m.output ?? '').slice(0,20000) });
+          status: m.isError ? 'failed' : 'completed', endedAt: Date.now(), output: String(m.output ?? '').slice(0,['read_github_issue','read_github_comments','read_github_pull_metadata','read_repository','search_repository'].includes(tool)?110*1024:20000) });
       }
       // Deliver each persisted transition directly; snapshots remain the reconnect fallback.
       this.emit('tool', { questId: id, call: this.store.toolCall(callId) });
     } else if (m.type === 'activity') {
       this.store.event(id, String(m.tool ?? 'activity'), String(m.detail ?? '').slice(0, 4000));
     } else if (m.type === 'question') {
+      if(q.kind==='guildmaster')try {this.inlineReads.toolBudget(id);} catch {return;}
       const toolCallId = text(m.id, 'Request ID', 200);
       const requestId = `${runId}:${toolCallId}`;
       if (this.store.getRequest(requestId)) return;
@@ -1017,6 +1071,7 @@ export class QuestService extends EventEmitter {
     });
   }
   stopWorker(id: string) {
+    this.inlineReads.revoke(id);
     this.revokeImageTokens(id);
     for(const [token,run] of this.connectionTokens)if(run.questId===id){run.controller.abort();this.connectionTokens.delete(token);}
     const live = this.live.get(id); if (!live) return;

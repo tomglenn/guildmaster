@@ -14,6 +14,11 @@ export interface QuestBoardSnapshot {
   omitted: number;
 }
 
+export interface InlineGrant {
+  github?: { host: string; owner: string; repository: string };
+  repository?: { repositoryId: string; commit: string };
+}
+
 export interface WorkerSpec {
   questId: string;
   parentQuestId?: string;
@@ -41,6 +46,8 @@ export interface WorkerSpec {
   role: 'quest' | 'guildmaster' | 'delegate';
   serviceUrl?: string;
   serviceToken?: string;
+  inlineToken?: string;
+  inlineGrant?: InlineGrant;
   /** Scoped local image capability; never a provider API credential. */
   imageToken?: string;
   connectionToken?: string;
@@ -56,7 +63,9 @@ export type WorkerEvent =
   | { type: 'message_start'; messageId: string }
   | { type: 'message'; role: 'assistant'; text: string; messageId?: string }
   | { type: 'delta'; text: string; messageId?: string }
-  | { type: 'tool_start'; toolCallId: string; tool: string; detail: string }
+  | { type: 'inline_round'; roundId: string }
+  | { type: 'inline_round_end'; roundId: string }
+  | { type: 'tool_start'; toolCallId: string; tool: string; detail: string; roundId?: string }
   | { type: 'tool_end'; toolCallId: string; tool: string; output: string; isError: boolean }
   | { type: 'activity'; tool: string; detail: string }
   | { type: 'question'; id: string; question: string }
@@ -65,7 +74,8 @@ export type WorkerEvent =
 
 export type WorkerCommand =
   | { type: 'answer'; id: string; answer: string; delivery?: DeliveryInstruction }
-  | { type: 'cancel' };
+  | { type: 'cancel' }
+  | { type: 'inline_exhausted'; reason: string };
 
 export const BUILTIN_TOOLS = ['read', 'grep', 'find', 'ls', 'edit', 'write', 'bash'] as const;
 

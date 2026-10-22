@@ -70,7 +70,12 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
       if (lead.activeRunId !== worker.runId || !['running','awaiting_input'].includes(lead.status)) throw new AppError('This lead run is no longer active.',403);
       return { human: false, gm: undefined, lead, runId: worker.runId };
     }
-    const gmId = service.gmTokens.get(supplied); if (gmId) return {human: false, gm: service.get(gmId), lead: undefined};
+    const gmId = service.gmTokens.get(supplied);
+    if (gmId) {
+      const gm=service.get(gmId);
+      if(gm.activeRunId!==service.gmRunTokens.get(supplied)||!['running','awaiting_input'].includes(gm.status))throw new AppError('This Guildmaster run is no longer active.',403);
+      return {human:false,gm,lead:undefined};
+    }
     const cookie = req.headers.cookie?.split(';').map(x => x.trim()).find(x => x.startsWith('guildmaster_token='))?.slice('guildmaster_token='.length) ?? '';
     if (safeEqual(cookie, token)) return {human: true, gm: undefined, lead: undefined};
     throw new AppError('Open Guildmaster in this browser to connect to the local service.', 401);
@@ -85,11 +90,23 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         if (!allowed.has(req.headers.origin)) throw new AppError('This origin cannot access Guildmaster.', 403);
       }
       const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`); const path = url.pathname;
+      // Exhaustion fences all ordinary main routes, including public/GET routes.
+      // Worker completion is IPC and deliberately retains its authority.
+      const mainId=service.gmTokens.get(req.headers.authorization?.replace(/^Bearer /,'') ?? '');
+      if(mainId)service.inlineReads.toolBudget(mainId);
       if(req.method==='GET'&&path==='/oauth/slack/callback') {
         const ok=await connections.callback(url.searchParams.get('state'),url.searchParams.get('code'),url.searchParams.has('error'));
         broadcast('change',{connection:true});
         res.writeHead(ok||url.searchParams.has('error')?200:400,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'"});
         res.end(`<html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guildmaster Slack connection</title><body style="font:16px system-ui;padding:40px;background:#191a1c;color:#e9e9ec"><h1>${ok?'Slack connected':url.searchParams.has('error')?'Slack sign-in cancelled':'Slack could not be connected'}</h1><p>Return to Guildmaster Settings → Connections${ok||url.searchParams.has('error')?'.':' to check the connection and try again.'}</p></body></html>`);return;
+      }
+      if(path==='/api/agent/inline-read') {
+        if(req.method!=='POST')throw new AppError('Method not allowed.',405);
+        const supplied=req.headers.authorization?.replace(/^Bearer /,'') ?? '';
+        const input=await body(req);
+        input.roundId ??= req.headers['x-guildmaster-round-id'];
+        const controller=new AbortController();const onClose=()=>{if(!res.writableEnded)controller.abort();};res.on('close',onClose);
+        try {json(res,200,await service.inlineReads.read(supplied,input,controller.signal));} finally {res.off('close',onClose);}return;
       }
       if (path === '/api/agent/images' || path === '/api/agent/images/generate') {
         const supplied = req.headers.authorization?.replace(/^Bearer /, '') ?? '';
@@ -97,6 +114,10 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         const active = () => {
           const quest = run && store.get(run.questId);
           if (!run || run.controller.signal.aborted || quest?.activeRunId !== run.runId || !['running','awaiting_input'].includes(quest.status)) throw new AppError('This agent run no longer has image access.',403);
+          if (quest.kind === 'guildmaster') {
+            service.inlineReads.toolBudget(quest.id);
+            if (req.method === 'POST' && service.inlineReads.hasRead(quest.id)) throw new AppError('Inline source data cannot authorize image generation. Only the original request may be handed off to a quest.',403);
+          }
           return quest;
         };
         const quest = active();
@@ -124,13 +145,13 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         const supplied=req.headers.authorization?.replace(/^Bearer /,'') ?? '';
         const run=service.connectionTokens.get(supplied);
         const active=()=>{const quest=run&&store.get(run.questId);if(!run||run.controller.signal.aborted||quest?.activeRunId!==run.runId||!['running','awaiting_input'].includes(quest.status))throw new AppError('This agent run no longer has connection access.',403);};
-        active();
+        active();service.inlineReads.toolBudget(run!.questId);
         if(req.method==='GET'&&path==='/api/agent/connections') {json(res,200,{connections:connections.statuses(),availableTools:run!.grants.flatMap(g=>g.tools.map(t=>t.name))});return;}
         if(req.method!=='POST'||!path.endsWith('/call'))throw new AppError('Method not allowed.',405);
-        const input=await body(req);const grant=run!.grants.find(g=>g.connectionId===input.connectionId);
+        const input=await body(req);service.inlineReads.toolBudget(run!.questId);const grant=run!.grants.find(g=>g.connectionId===input.connectionId);
         if(!grant)throw new AppError('This connection is not available to this run.',403);
         const controller=new AbortController();const onClose=()=>{if(!res.writableEnded)controller.abort();};res.on('close',onClose);
-        try {const result=await connections.call(grant,input.tool,input.arguments,AbortSignal.any([run!.controller.signal,controller.signal]));active();json(res,200,result);}finally{res.off('close',onClose);}return;
+        try {const result=await connections.call(grant,input.tool,input.arguments,AbortSignal.any([run!.controller.signal,controller.signal]));active();service.inlineReads.toolBudget(run!.questId);json(res,200,result);}finally{res.off('close',onClose);}return;
       }
       if (req.method === 'GET' && path === '/api/health') { json(res, 200, {ok:true,version:'0.1.0',dataDir,capabilities:{isolatedQuests:true,followupQuests:true,schedules:true}}); return; }
       if (req.method === 'GET' && path === '/api/bootstrap') {
@@ -143,6 +164,15 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
       }
       if (path.startsWith('/api/')) {
         const auth = authorize(req);
+        // The only post-read mutation exception copies the exact original direct request.
+        if(path==='/api/guildmaster/delegate-request') {
+          if(!auth.gm)throw new AppError('Only the active Guildmaster run can hand off its request.',403);
+          if(req.method!=='POST')throw new AppError('Method not allowed.',405);
+          const runId=auth.gm.activeRunId!;
+          json(res,200,await service.delegateRequest(auth.gm.id,runId,await body(req)));return;
+        }
+        // Source text cannot authorize other mutations; worker questions use IPC.
+        if(auth.gm&&req.method!=='GET'&&req.method!=='HEAD'&&service.inlineReads.hasRead(auth.gm.id))throw new AppError('Inline source data cannot authorize mutations. Use delegate_current_request to hand off only the saved original request within its scope; unrelated actions need direct user authorization.',403);
         const filePath = path.match(/^\/api\/quests\/([^/]+)\/files\/(.+)$/);
         if (filePath) {
           if (!auth.human) throw new AppError('Only the user can open quest files.',403);
