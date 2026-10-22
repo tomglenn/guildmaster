@@ -106,7 +106,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         if (req.headers.authorization && !authorize(req).human) throw new AppError('Only the user can open the browser session.',403);
         res.setHeader('Set-Cookie', `guildmaster_token=${token}; HttpOnly; SameSite=Strict; Path=/`);
         const available = await models();
-        json(res, 200, { quests: store.list().filter(q => q.kind === 'quest').map(q => service.withAgentSummary(q)), guildmaster: store.list().find(q => q.kind === 'guildmaster' && !q.archivedAt) ?? null,
+        json(res, 200, { ...service.board(),
           ...available, defaultModel: await settings.getDefaultModel(), defaultWorkspace: service.defaultWorkspace,
           projects: store.projects(), dataDir, version:'0.1.0' }); return;
       }
@@ -295,7 +295,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
           const timer = setInterval(() => res.write(': heartbeat\n\n'), 15000);
           res.on('close', () => { clearInterval(timer); clients.delete(res); }); return;
         }
-        if (req.method === 'GET' && path === '/api/quests') { const quests=store.list().filter(q => q.kind === 'quest').map(q => service.withAgentSummary(q)); json(res,200,auth.human?quests:quests.map(questSummary)); return; }
+        if (req.method === 'GET' && path === '/api/quests') { const quests=service.board().quests; json(res,200,auth.human?quests:quests.map(questSummary)); return; }
         const questPath = path.match(/^\/api\/quests\/([^/]+)(?:\/(continue|resume|accept|cancel|archive|restore))?$/);
         if (req.method === 'GET' && questPath && !questPath[2]) {
           const detail=service.detail(questPath[1]);

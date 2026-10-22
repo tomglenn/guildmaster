@@ -36,6 +36,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS messages_quest ON messages(questId);
       CREATE INDEX IF NOT EXISTS events_quest ON events(questId);
       CREATE INDEX IF NOT EXISTS deliveries_quest ON deliveries(questId);
+      CREATE INDEX IF NOT EXISTS quests_parent ON quests(json_extract(data,'$.parentQuestId'));
     `);
     // Remove retired registry preferences without changing saved quest workspaces.
     this.transaction(() => {
@@ -57,6 +58,7 @@ export class Store {
     return row ? JSON.parse(row.data) : undefined;
   }
   list(): Quest[] { return (this.db.prepare('SELECT data FROM quests').all() as { data: string }[]).map(r => JSON.parse(r.data)).sort((a, b) => b.createdAt - a.createdAt); }
+  children(parentId: string): Quest[] { return (this.db.prepare("SELECT data FROM quests WHERE json_extract(data,'$.parentQuestId')=?").all(parentId) as { data: string }[]).map(r => JSON.parse(r.data)); }
   projects(): Project[] { return (this.db.prepare('SELECT data FROM projects').all() as { data: string }[]).map(r => JSON.parse(r.data)).sort((a, b) => a.name.localeCompare(b.name)); }
   project(id: string): Project | undefined {
     const row = this.db.prepare('SELECT data FROM projects WHERE id=?').get(id) as { data: string } | undefined;
@@ -82,10 +84,15 @@ export class Store {
   toolCalls(questId: string): ToolCall[] {
     return (this.db.prepare('SELECT data FROM tool_calls WHERE questId=? ORDER BY rowid').all(questId) as { data: string }[]).map(row => JSON.parse(row.data));
   }
+  toolCall(id: string): ToolCall | undefined {
+    const row = this.db.prepare('SELECT data FROM tool_calls WHERE id=?').get(id) as { data: string } | undefined;
+    return row ? JSON.parse(row.data) : undefined;
+  }
   saveToolCall(call: ToolCall) { this.db.prepare('INSERT INTO tool_calls VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(call.id, call.questId, JSON.stringify(call)); }
   interruptToolCalls(questId: string, runId?: string) {
-    for (const call of this.toolCalls(questId)) {
-      if (call.status === 'running' && (!runId || call.runId === runId)) this.saveToolCall({ ...call, status: 'interrupted', endedAt: Date.now() });
+    const rows = this.db.prepare("SELECT data FROM tool_calls WHERE questId=? AND json_extract(data,'$.status')='running'").all(questId) as { data: string }[];
+    for (const call of rows.map(row => JSON.parse(row.data) as ToolCall)) {
+      if (!runId || call.runId === runId) this.saveToolCall({ ...call, status: 'interrupted', endedAt: Date.now() });
     }
   }
   event(questId: string, type: string, detail: string) { this.db.prepare('INSERT INTO events (questId,type,detail,createdAt) VALUES (?,?,?,?)').run(questId, type, detail, Date.now()); }
