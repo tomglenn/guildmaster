@@ -60,5 +60,9 @@ test('conversation links open files in the correct quest without changing web or
   assert.match(html,/href="\/\?scheduleDraft=draft"/);
   assert.match(html,/href="\/api\/quests\/other\/files\/report.html"/);
   assert.match(html,/href="#heading"/);
+  const parent = renderToStaticMarkup(createElement(Markdown,{questId:'q',text:'[Proposal](../output/proposal.md) [Up](../../a/./b.md)'}));
+  assert.match(parent,/href="\/api\/quests\/q\/files\/..%2Foutput\/proposal.md"/);
+  assert.match(parent,/href="\/api\/quests\/q\/files\/..%2F..%2Fa\/.%2Fb.md"/);
+  assert.equal(new URL('/api/quests/q/files/..%2Foutput/proposal.md','http://x').pathname,'/api/quests/q/files/..%2Foutput/proposal.md');
   assert.doesNotMatch(renderToStaticMarkup(createElement(Markdown,{questId:'q',text:'[Bad](javascript:alert%281%29) [Remote file](file://remote/secret)'})),/href=/);
 });

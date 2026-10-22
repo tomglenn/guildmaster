@@ -13,7 +13,9 @@ function safeHref(value: string, questId?: string): string | undefined {
       if (url.protocol === 'file:' && url.hostname) return undefined;
       const rawPath = url.protocol === 'file:' ? url.pathname : href.split(/[?#]/)[0];
       const path = decodeURIComponent(rawPath);
-      return `/api/quests/${encodeURIComponent(questId)}/files/${path.split('/').map(encodeURIComponent).join('/').replace(/^\//,'%2F')}${url.hash}`;
+      // Browsers collapse ./.. segments before requesting, so join each to the segment after it.
+      const segments = path.split('/').map(encodeURIComponent).reduceRight<string[]>((after, part) => /^\.\.?$/.test(part) ? [`${part}%2F${after.shift() ?? ''}`, ...after] : [part, ...after], []);
+      return `/api/quests/${encodeURIComponent(questId)}/files/${segments.join('/').replace(/^\//,'%2F')}${url.hash}`;
     }
     return ['https:', 'http:', 'mailto:'].includes(url.protocol) ? href : undefined;
   } catch {
