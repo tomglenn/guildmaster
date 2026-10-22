@@ -1,5 +1,5 @@
 export type Appearance = {
-  theme: 'system' | 'light' | 'dark';
+  theme: 'system' | 'light' | 'dark' | 'cyberpunk' | 'guildhall';
   textSize: 'default' | 'large' | 'larger';
   motion: 'system' | 'reduced';
 };
@@ -9,7 +9,7 @@ function read(): Appearance {
   try {
     const value = JSON.parse(localStorage.getItem(key) || '{}');
     return {
-      theme: ['system', 'light', 'dark'].includes(value?.theme) ? value.theme : defaults.theme,
+      theme: ['system', 'light', 'dark', 'cyberpunk', 'guildhall'].includes(value?.theme) ? value.theme : defaults.theme,
       textSize: ['default', 'large', 'larger'].includes(value?.textSize) ? value.textSize : defaults.textSize,
       motion: ['system', 'reduced'].includes(value?.motion) ? value.motion : defaults.motion,
     };
@@ -29,7 +29,7 @@ export function initializeAppearance() {
     const root = document.documentElement;
     root.dataset.theme = current.theme === 'system' ? dark.matches ? 'dark' : 'light' : current.theme;
     const icon = document.querySelector<HTMLLinkElement>('#app-icon');
-    if (icon) icon.href = root.dataset.theme === 'dark' ? '/gm-avatar-light.png' : '/gm-avatar-dark.png';
+    if (icon) icon.href = root.dataset.theme === 'light' ? '/gm-avatar-dark.png' : '/gm-avatar-light.png';
     root.dataset.textSize = current.textSize;
     root.dataset.reducedMotion = String(current.motion === 'reduced' || reduced.matches);
   };

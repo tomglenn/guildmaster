@@ -1,0 +1,192 @@
+/* NIGHT CITY — an industrial, cinematic workspace. All overrides are opt-in. */
+@font-face{font-family:Barlow Condensed;src:url('/fonts/barlow-condensed-semibold.ttf') format('truetype');font-style:normal;font-weight:600;font-display:swap}
+@font-face{font-family:Barlow Condensed;src:url('/fonts/barlow-condensed-extrabold.ttf') format('truetype');font-style:normal;font-weight:800;font-display:swap}
+.cyber-welcome,.cyber-brand{display:none}
+.theme-options{grid-template-columns:repeat(4,minmax(0,1fr));max-width:680px}
+.theme-mini[data-tone="cyberpunk"]{background:linear-gradient(90deg,#100e17aa,transparent),url('/themes/cyberpunk-city.jpg') 65% center/cover}
+.theme-mini[data-tone="cyberpunk"] .theme-mini-sidebar{background:#121018;border:0}
+.theme-mini[data-tone="cyberpunk"] i{background:#f4ff69;border-radius:0}
+.theme-mini[data-tone="cyberpunk"] i:nth-child(2){background:#ff72ac;width:80%}
+.theme-mini[data-tone="cyberpunk"] i:last-child{background:#fff;width:45%}
+
+:root[data-theme="cyberpunk"]{
+  color-scheme:dark;
+  --canvas:#100e17;--surface:#191620;--surface-raised:#282330;--surface-inset:#100e17;
+  --sidebar:#121018;--user-surface:#2b2435;--text:#f5f2eb;--secondary:#d1c9d5;--muted:#b3a6bc;
+  --line:#504254;--primary:#f4ff69;--primary-hover:#f9ffa3;--on-primary:#17190b;
+  --accent:#f4ff69;--success:#a5f2bf;--warning:#ffcf87;--danger:#ff9cac;--info:#9ee5ed;
+  --code-surface:#0d0b12;--code-text:#ecdae9;
+  --display:'Barlow Condensed','Arial Narrow',Impact,sans-serif;
+  --workspace-panel:#100e17f5;--workspace-header:#100e17f5;--workspace-frame:#ffffff38;
+  --cyber-pink:#ff72ac;--cyber-mono:'SFMono-Regular',Consolas,'Liberation Mono',monospace;
+}
+:root[data-theme="cyberpunk"] ::selection{background:#f4ff69;color:#17190b}
+:root[data-theme="cyberpunk"] .app-shell{
+  padding:16px;gap:18px;grid-template-columns:236px minmax(0,1fr);isolation:isolate;position:relative;
+  background:#100e17;
+}
+:root[data-theme="cyberpunk"] .app-shell:before{
+  content:'';position:absolute;inset:0;z-index:-2;pointer-events:none;
+  background:linear-gradient(90deg,#100e17b0 0%,#100e1730 55%,#100e1700),url('/themes/cyberpunk-city.jpg') 65% center/cover;
+}
+:root[data-theme="cyberpunk"] .app-shell:after{
+  content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:linear-gradient(180deg,#100e171a 50%,#100e17bd),linear-gradient(90deg,#ff36800c,transparent 60%);
+}
+:root[data-theme="cyberpunk"] .main{background:transparent;--page-padding:28px;--page-title-size:40px;--header-padding:24px}
+/* The sidebar is a physical control surface. Selected controls use a solid silhouette. */
+:root[data-theme="cyberpunk"] .sidebar{background:#100e17eb;border:1px solid #ffffff22;position:relative;box-shadow:0 16px 60px #0005;backdrop-filter:blur(18px)}
+:root[data-theme="cyberpunk"] .brand{padding:28px 24px 30px;display:block;position:relative;border-bottom:1px solid #ffffff22;margin-bottom:20px;text-align:left}
+:root[data-theme="cyberpunk"] .brand-logo,:root[data-theme="cyberpunk"] .brand-version{display:none}
+:root[data-theme="cyberpunk"] .cyber-brand{display:block;color:var(--primary);font:800 52px/.79 var(--display);letter-spacing:-1px}
+:root[data-theme="cyberpunk"] .cyber-brand>span{display:block}
+:root[data-theme="cyberpunk"] .cyber-brand-mark{font:600 13px var(--display);vertical-align:top;margin-left:5px}
+:root[data-theme="cyberpunk"] .cyber-brand small{display:block;font:9px/1.6 var(--cyber-mono);color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-top:20px}
+:root[data-theme="cyberpunk"] .sidebar-main{padding:0 14px}
+:root[data-theme="cyberpunk"] .sidebar-main nav{counter-reset:cyber-nav}
+:root[data-theme="cyberpunk"] .nav-item{
+  counter-increment:cyber-nav;border:0;border-radius:0;padding:14px 12px;margin-bottom:6px;gap:10px;position:relative;
+  background:transparent;color:var(--secondary);box-shadow:none;font:600 19px/1.2 var(--display);text-transform:uppercase;letter-spacing:.5px;transition:none;
+  clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));
+}
+:root[data-theme="cyberpunk"] .nav-item:before{content:'0' counter(cyber-nav);font:10px var(--cyber-mono);opacity:.65}
+:root[data-theme="cyberpunk"] .nav-item>svg{display:none}
+:root[data-theme="cyberpunk"] .nav-item.active{background:var(--primary);color:var(--on-primary);box-shadow:none;border:0}
+:root[data-theme="cyberpunk"] .nav-item.active:after{content:'↗';font:24px/1 var(--display);margin-left:auto}
+:root[data-theme="cyberpunk"] .nav-item:hover:not(.active){background:#ffffff13;color:var(--text)}
+:root[data-theme="cyberpunk"] .nav-item:focus-visible{outline:2px solid var(--cyber-pink);outline-offset:-4px}
+:root[data-theme="cyberpunk"] .nav-count{font:11px var(--cyber-mono);color:inherit}
+:root[data-theme="cyberpunk"] .nav-label{font:9px/1.6 var(--cyber-mono);letter-spacing:1.6px;text-transform:uppercase}
+:root[data-theme="cyberpunk"] .quests-label{border-top:1px solid #ffffff20;margin:26px 8px 10px;padding-top:20px}
+:root[data-theme="cyberpunk"] .quests-label>span:last-child{font:9px var(--cyber-mono);color:var(--muted)}
+:root[data-theme="cyberpunk"] .recent-quest{border:1px solid transparent;border-radius:0;padding:12px 8px;gap:8px;font-size:13px;box-shadow:none}
+:root[data-theme="cyberpunk"] .recent-quest.active{background:#ff72ac12;border-color:#ff72ac70;box-shadow:none;color:var(--text)}
+:root[data-theme="cyberpunk"] .recent-quest:hover{background:#ffffff0a}
+:root[data-theme="cyberpunk"] .recent-quest .sidebar-status{background:transparent;padding:0;border-radius:0;font-size:11px}
+:root[data-theme="cyberpunk"] .recent-quest-project{font-size:11px}
+:root[data-theme="cyberpunk"] .sidebar-bottom{border-top:1px solid #ffffff22;margin:0 20px;padding:16px 0}
+:root[data-theme="cyberpunk"] .service-line{font:10px var(--cyber-mono);text-transform:uppercase;letter-spacing:1px}
+:root[data-theme="cyberpunk"] .connection-dot{border-radius:0;transform:rotate(45deg);box-shadow:0 0 9px #a5f2bf55}
+:root[data-theme="cyberpunk"] .sidebar-settings{border:1px solid var(--line);border-radius:0}
+:root[data-theme="cyberpunk"] .sidebar-settings.active{background:var(--primary);color:var(--on-primary)}
+/* Headers and tabs sit over the city; reading and editing surfaces remain opaque. */
+:root[data-theme="cyberpunk"] :is(.gm-heading,.quest-header,.page-heading){background:linear-gradient(90deg,#100e17e8,#100e1780);border:0;border-image:none}
+:root[data-theme="cyberpunk"] :is(.page-heading h1,.gm-heading h1,.quest-title-row h1){font-family:var(--display);font-weight:800;font-size:40px;line-height:1;text-transform:uppercase;letter-spacing:.2px}
+:root[data-theme="cyberpunk"] :is(.board-toolbar,.quest-tabbar,.detail-tabs){border-image:none;border-color:#ffffff30}
+:root[data-theme="cyberpunk"] :is(.filter-tabs,.detail-tabs) button{font:600 17px var(--display);text-transform:uppercase;letter-spacing:.4px}
+:root[data-theme="cyberpunk"] :is(.filter-tabs,.detail-tabs) button.selected{color:var(--primary);border-bottom-color:var(--primary)}
+:root[data-theme="cyberpunk"] .quest-tabbar{background:#100e17e8}
+:root[data-theme="cyberpunk"] .button{border:1px solid #79677b;border-radius:0;background:#191620;color:var(--text);font-weight:500}
+:root[data-theme="cyberpunk"] .button:hover:not(:disabled){background:#382c40;border-color:var(--cyber-pink)}
+:root[data-theme="cyberpunk"] :is(.button.primary,.send-button){background:var(--primary);border-color:var(--primary);color:var(--on-primary);border-radius:0;box-shadow:none}
+:root[data-theme="cyberpunk"] .button.primary{font:600 18px var(--display);text-transform:uppercase;letter-spacing:.6px;padding:10px 22px;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px))}
+:root[data-theme="cyberpunk"] :is(.button.primary,.send-button):hover:not(:disabled){background:var(--primary-hover);border-color:var(--primary-hover)}
+:root[data-theme="cyberpunk"] .button.primary:focus-visible{outline-offset:-4px;outline-color:var(--on-primary)}
+:root[data-theme="cyberpunk"] :is(input,textarea)::placeholder{color:var(--muted);opacity:1}
+:root[data-theme="cyberpunk"] :is(input,select,textarea){border-radius:0}
+:root[data-theme="cyberpunk"] :is(.gm-composer,.quest-composer){background:#100e17ed;padding-top:18px;padding-bottom:18px}
+:root[data-theme="cyberpunk"] .composer{background:#24202c;border:1px solid #8c778b;border-radius:0;box-shadow:6px 6px 0 #0004;padding:14px;gap:12px}
+:root[data-theme="cyberpunk"] .composer:focus-within{border-color:var(--primary);box-shadow:6px 6px 0 #f4ff6920}
+:root[data-theme="cyberpunk"] .send-button{height:40px;width:36px}
+:root[data-theme="cyberpunk"] .composer-meta{font-size:11px}
+/* Mission files: strong type, clipped folder corners, no selection rails. */
+:root[data-theme="cyberpunk"] .quest-grid{gap:18px;counter-reset:cyber-quest}
+:root[data-theme="cyberpunk"] .quest-card{counter-increment:cyber-quest;border:1px solid #ffffff38;border-radius:0;background:#17131fec;backdrop-filter:blur(16px);box-shadow:8px 8px 0 #0003;position:relative;overflow:hidden}
+:root[data-theme="cyberpunk"] .quest-card:after{content:'';position:absolute;right:-1px;top:-1px;width:22px;height:22px;background:linear-gradient(45deg,transparent 48%,#ffffff38 49%,#ffffff38 51%,#100e17 52%);pointer-events:none}
+:root[data-theme="cyberpunk"] .quest-card:hover{background:#211927f5;border-color:var(--cyber-pink);box-shadow:8px 8px 0 #ff72ac13}
+:root[data-theme="cyberpunk"] .quest-card-open{border-radius:0;padding:24px}
+:root[data-theme="cyberpunk"] .quest-card-open:focus-visible{outline-offset:-5px}
+:root[data-theme="cyberpunk"] .quest-card-top{margin-bottom:24px}
+:root[data-theme="cyberpunk"] .quest-monogram{border:0;border-radius:0;background:transparent;width:auto;height:auto;color:var(--muted);gap:10px;display:flex}
+:root[data-theme="cyberpunk"] .quest-monogram:before{content:'0' counter(cyber-quest);font:800 38px/.8 var(--display);color:var(--quest-accent)}
+:root[data-theme="cyberpunk"] .quest-monogram svg{width:16px;height:16px}
+:root[data-theme="cyberpunk"] .quest-card h2{font:600 30px/1.05 var(--display);text-transform:uppercase;letter-spacing:.3px;margin-bottom:16px}
+:root[data-theme="cyberpunk"] .quest-card-open>p{font-size:14px;color:var(--secondary)}
+:root[data-theme="cyberpunk"] .quest-card-footer{border-color:#ffffff25;font:10px/1.5 var(--cyber-mono);text-transform:uppercase;letter-spacing:.2px}
+:root[data-theme="cyberpunk"] .badge{font:10px/1.5 var(--cyber-mono);text-transform:uppercase;letter-spacing:.5px;padding:5px 8px;border:1px solid color-mix(in srgb,currentColor 35%,transparent);border-radius:0;background:color-mix(in srgb,currentColor 7%,transparent)}
+:root[data-theme="cyberpunk"] .status-dot{border-radius:0}
+:root[data-theme="cyberpunk"] .board-footnote{background:#100e17e8;margin-top:24px;padding:12px}
+:root[data-theme="cyberpunk"] .message-user{background:var(--user-surface);border:1px solid #63516b;border-radius:0;padding:20px 24px}
+:root[data-theme="cyberpunk"] .message-meta strong{font:600 18px var(--display);text-transform:uppercase;letter-spacing:.8px}
+:root[data-theme="cyberpunk"] .message-meta>span{font:10px var(--cyber-mono);color:var(--muted)}
+:root[data-theme="cyberpunk"] .message-assistant .message-meta strong{color:var(--primary)}
+:root[data-theme="cyberpunk"] .markdown pre{border:1px solid var(--line);border-radius:0;background:var(--code-surface)}
+:root[data-theme="cyberpunk"] .code-block{border-radius:0}
+:root[data-theme="cyberpunk"] .markdown :not(pre)>code{color:#ffacd0}
+:root[data-theme="cyberpunk"] .markdown blockquote{border:1px solid #79677b;border-radius:0;padding:14px 18px;background:#221b2b}
+:root[data-theme="cyberpunk"] .latest-result-shortcut .button{border-color:var(--primary);background:#191620;color:var(--primary);box-shadow:4px 4px 0 #0006}
+:root[data-theme="cyberpunk"] :is(.agent-overview-row,.connection-service-card,.appearance-preview,.theme-option,.request-card){border-radius:0}
+:root[data-theme="cyberpunk"] :is(dialog,.model-picker-popover){border-radius:0;border-color:#ac899e;box-shadow:12px 12px 0 #0005;background:var(--surface)}
+:root[data-theme="cyberpunk"] dialog::backdrop{background:#100e17b8;backdrop-filter:blur(9px)}
+:root[data-theme="cyberpunk"] .theme-option.selected{border-color:var(--primary);box-shadow:4px 4px 0 #f4ff6926;background:#f4ff6909}
+:root[data-theme="cyberpunk"] .empty-emblem{border-radius:0;background:var(--primary);color:var(--on-primary);transform:rotate(-6deg)}
+:root[data-theme="cyberpunk"] .empty-emblem svg{transform:rotate(6deg)}
+/* The empty workspace opens directly onto the city. */
+:root[data-theme="cyberpunk"] .gm-scroll:has(.welcome){background:linear-gradient(90deg,#100e17bd,transparent 80%)}
+:root[data-theme="cyberpunk"] .welcome{max-width:none;min-height:100%;padding:42px 48px;align-items:flex-start;justify-content:center;text-align:left;gap:32px}
+:root[data-theme="cyberpunk"] .welcome>h2{display:none}
+:root[data-theme="cyberpunk"] .cyber-welcome{display:block;position:relative;width:100%}
+:root[data-theme="cyberpunk"] .cyber-kicker{font:10px/1.5 var(--cyber-mono);color:var(--primary);letter-spacing:2px;text-transform:uppercase;display:flex;align-items:center;gap:12px;margin-bottom:24px}
+:root[data-theme="cyberpunk"] .cyber-kicker>span{display:grid;place-items:center;width:28px;height:28px;background:var(--primary);color:var(--on-primary);font-size:22px;transform:rotate(-8deg)}
+:root[data-theme="cyberpunk"] .cyber-welcome h2{font:800 clamp(72px,8.4vw,140px)/.82 var(--display);letter-spacing:-1.5px;text-transform:uppercase;color:var(--primary);max-width:none;margin:0}
+:root[data-theme="cyberpunk"] .cyber-welcome h2>span{color:var(--text);text-shadow:3px 3px 0 #ff3f7a50}
+:root[data-theme="cyberpunk"] .cyber-welcome p{font-size:15px;line-height:1.8;color:var(--text);margin-top:28px;max-width:380px;text-shadow:0 1px 8px #000}
+:root[data-theme="cyberpunk"] .cyber-welcome-caption{display:flex;align-items:center;gap:10px;font:9px/1.7 var(--cyber-mono);color:var(--secondary);text-transform:uppercase;letter-spacing:1px;margin-top:28px}
+:root[data-theme="cyberpunk"] .cyber-welcome-caption>span{width:34px;height:13px;background:repeating-linear-gradient(90deg,var(--cyber-pink) 0 1px,transparent 1px 3px,var(--cyber-pink) 3px 5px,transparent 5px 7px)}
+:root[data-theme="cyberpunk"] .welcome-suggestions{counter-reset:cyber-suggestion;justify-content:flex-start;max-width:850px;gap:12px;width:100%}
+:root[data-theme="cyberpunk"] .welcome-suggestions button{counter-increment:cyber-suggestion;position:relative;min-width:0;flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:18px;background:#17131feb;backdrop-filter:blur(16px);color:var(--text);border:1px solid #a18b9e;border-radius:0;font:600 20px/1.1 var(--display);text-transform:uppercase;letter-spacing:.2px}
+:root[data-theme="cyberpunk"] .welcome-suggestions button:before{content:'0' counter(cyber-suggestion);flex-basis:100%;font:10px var(--cyber-mono);color:var(--cyber-pink)}
+:root[data-theme="cyberpunk"] .welcome-suggestions button svg{margin-left:auto;color:var(--primary)}
+:root[data-theme="cyberpunk"] .welcome-suggestions button:hover:not(:disabled){background:var(--primary);color:var(--on-primary);border-color:var(--primary);transform:translateY(-3px);box-shadow:5px 5px 0 #ff72ac80}
+:root[data-theme="cyberpunk"] .welcome-suggestions button:hover:not(:disabled):before,:root[data-theme="cyberpunk"] .welcome-suggestions button:hover:not(:disabled) svg{color:var(--on-primary)}
+:root[data-theme="cyberpunk"] .cyber-welcome{animation:cyber-reveal .55s ease-out both}
+@keyframes cyber-reveal{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){:root[data-theme="cyberpunk"] .cyber-welcome{animation:none}:root[data-theme="cyberpunk"] .welcome-suggestions button:hover:not(:disabled){transform:none}}
+:root[data-theme="cyberpunk"][data-reduced-motion="true"] .cyber-welcome{animation:none}
+:root[data-theme="cyberpunk"][data-reduced-motion="true"] .welcome-suggestions button:hover:not(:disabled){transform:none}
+@media(max-width:1100px) and (min-width:651px){
+  :root[data-theme="cyberpunk"] .app-shell{grid-template-columns:202px minmax(0,1fr);gap:12px;padding:12px}
+  :root[data-theme="cyberpunk"] .brand{padding:24px 18px}
+  :root[data-theme="cyberpunk"] .cyber-brand{font-size:44px}
+  :root[data-theme="cyberpunk"] .welcome{padding:32px 24px}
+  :root[data-theme="cyberpunk"] .welcome-suggestions button{font-size:18px;padding:14px}
+}
+@media(max-width:800px) and (min-width:651px){
+  :root[data-theme="cyberpunk"] .quest-grid{grid-template-columns:minmax(0,1fr)}
+  :root[data-theme="cyberpunk"] .welcome-suggestions{flex-direction:column;max-width:360px}
+  :root[data-theme="cyberpunk"] .welcome-suggestions button:before{flex-basis:auto}
+}
+@media(max-width:650px){
+  .theme-options{grid-template-columns:repeat(2,minmax(0,1fr));max-width:440px}
+  :root[data-theme="cyberpunk"] .app-shell{padding:0;gap:0;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  :root[data-theme="cyberpunk"] .app-shell:before{background-position:70% center}
+  :root[data-theme="cyberpunk"] .sidebar{display:grid;grid-template-columns:minmax(0,1fr) auto;padding:14px 16px 10px;gap:12px;border:0;border-bottom:1px solid #ffffff30}
+  :root[data-theme="cyberpunk"] .brand{padding:0;margin:0;border:0;width:fit-content}
+  :root[data-theme="cyberpunk"] .cyber-brand{font-size:28px;line-height:1;letter-spacing:-.5px}
+  :root[data-theme="cyberpunk"] .cyber-brand>span{display:inline}
+  :root[data-theme="cyberpunk"] .cyber-brand small{display:none}
+  :root[data-theme="cyberpunk"] .cyber-brand-mark{font-size:9px}
+  :root[data-theme="cyberpunk"] .sidebar-main{grid-column:1/-1;grid-row:2;padding:0;min-width:0}
+  :root[data-theme="cyberpunk"] .sidebar-main nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+  :root[data-theme="cyberpunk"] .nav-item{font-size:14px;padding:10px 3px;letter-spacing:0;justify-content:center;margin:0;clip-path:polygon(0 0,calc(100% - 6px) 0,100% 6px,100% 100%,0 100%);gap:4px}
+  :root[data-theme="cyberpunk"] .nav-item:before,:root[data-theme="cyberpunk"] .nav-item.active:after{display:none}
+  :root[data-theme="cyberpunk"] .nav-count{font-size:9px;margin-left:0;padding:0}
+  :root[data-theme="cyberpunk"] .sidebar-bottom{grid-column:2;grid-row:1;margin:0;padding:0;border:0}
+  :root[data-theme="cyberpunk"] .main{--page-padding:16px;--header-padding:16px}
+  :root[data-theme="cyberpunk"] :is(.page-heading h1,.gm-heading h1,.quest-title-row h1){font-size:30px}
+  :root[data-theme="cyberpunk"] .welcome{padding:30px 22px;gap:24px}
+  :root[data-theme="cyberpunk"] .cyber-welcome h2{font-size:clamp(64px,17vw,100px)}
+  :root[data-theme="cyberpunk"] .cyber-kicker{font-size:9px;letter-spacing:1px;margin-bottom:20px}
+  :root[data-theme="cyberpunk"] .cyber-welcome p{font-size:14px;margin-top:22px}
+  :root[data-theme="cyberpunk"] .cyber-welcome-caption{display:none}
+  :root[data-theme="cyberpunk"] .welcome-suggestions{max-width:none;width:100%;gap:8px}
+  :root[data-theme="cyberpunk"] .welcome-suggestions button{padding:14px;font-size:18px;flex-wrap:nowrap;justify-content:flex-start}
+  :root[data-theme="cyberpunk"] .welcome-suggestions button:before{flex-basis:auto;font-size:9px}
+  :root[data-theme="cyberpunk"] .composer{padding:10px;gap:8px}
+  :root[data-theme="cyberpunk"] .quest-card h2{font-size:26px}
+}
+@media(max-height:780px) and (min-width:801px){
+  :root[data-theme="cyberpunk"] .welcome{padding-top:28px;padding-bottom:28px;gap:24px}
+  :root[data-theme="cyberpunk"] .cyber-welcome h2{font-size:clamp(70px,7.5vw,110px)}
+  :root[data-theme="cyberpunk"] .cyber-welcome-caption{display:none}
+}

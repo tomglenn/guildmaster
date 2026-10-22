@@ -1,0 +1,23 @@
+/* Shared geometry for illustrated workspaces. Keep view frames and reading panels aligned. */
+/* One frame for each view's title, actions, and navigation. */
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) :is(.page-header-sticky,.view-header,.gm-heading){background:var(--workspace-header);backdrop-filter:blur(16px);border:1px solid var(--workspace-frame);border-image:none;min-width:0}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .page-header-sticky{margin:0 0 var(--page-padding);top:0}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) :is(.view-header,.gm-heading){margin:var(--page-padding) var(--page-padding) 0;width:auto;flex-shrink:0}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .view-header{display:block}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .view-header[hidden]{display:none}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .gm-heading{padding:var(--header-padding);flex-wrap:wrap}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) :is(.page-header-sticky,.view-header)>:is(.page-heading,.quest-header){background:transparent;padding:var(--header-padding);border:0;border-image:none}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) :is(.page-header-sticky,.view-header)>:is(.board-toolbar,.detail-tabs,.quest-tabbar){background:transparent;padding:0 var(--header-padding);border:0;margin:0;width:auto}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) :is(.settings-page,.projects-page,.schedules-page,.agent-detail-view,.quest-content){background:transparent}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .quest-info{background:var(--canvas)}
+/* Artwork fills every gutter; the individual working panels carry the theme material. */
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .quest-view>.quest-body{margin:var(--page-padding);border:1px solid var(--workspace-frame)}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .quest-view:has(.agent-detail-view)>.quest-body{margin:0;border:0}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .guildmaster-view>.quest-conversation-wrap{margin:var(--page-padding) var(--page-padding) 0}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .guildmaster-view>.gm-composer{margin:0 var(--page-padding) var(--page-padding);width:auto}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .agent-detail-view>.quest-conversation-wrap{margin:var(--page-padding);border:1px solid var(--workspace-frame);background:var(--workspace-panel)}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .agents-overview{background:var(--workspace-panel)}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) :is(.schedule-editor,.schedule-overview,.schedule-history,.project-focus-editor,.project-config-editor){background:var(--workspace-panel);border:1px solid var(--workspace-frame);padding:var(--header-padding)}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .providers-settings>.page-header-sticky~:is(section,div){background:var(--workspace-panel);border:1px solid var(--workspace-frame);padding:var(--header-padding)}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .quest-conversation-wrap:has(.conversation){background:var(--workspace-panel)}
+:root:is([data-theme="cyberpunk"],[data-theme="guildhall"]) .quest-content{min-width:0}
