@@ -38,8 +38,6 @@ export default function ModelSettings({onChanged}:{onChanged:()=>Promise<void>})
         {row('writing','Writing & output','Documents, reports, and deliverables.',true)}
         {row('review','Adversarial review','Independent challenges to work. Ordinary reviews can stay with the lead.',true)}
       </details></fieldset>
-      <p className="model-settings-help">Thinking sets the reasoning effort; supported levels depend on the model.</p>
-      <p className="model-settings-help">Changes apply to new assignments. Existing quests and subagents keep their models.</p>
       <div className="settings-save-actions"><button className="button" disabled={busy||JSON.stringify(draft)===JSON.stringify(view.defaults)}>{busy?'Saving…':'Save model defaults'}</button>{saved&&<span className="settings-saved" role="status">Saved</span>}</div>
     </form>}
   </section>;

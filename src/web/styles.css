@@ -1031,5 +1031,4 @@ select:not([multiple]),.field select:not([multiple]){appearance:none;-webkit-app
 .model-specialists{margin-top:24px;padding:0;border:0;background:transparent}
 .model-specialists summary{display:list-item}.model-specialists summary>span{margin-left:10px;font-size:12px;color:var(--muted);font-weight:400}
 .model-specialists .model-default-row:last-child{border-bottom:0}
-.model-settings .model-settings-help{font-size:13px;color:var(--muted);margin:16px 0}
 @media(max-width:700px){.model-column-headings{display:none}.model-settings .model-mobile-label{display:block;margin-bottom:5px;font-size:12px;color:var(--muted)}.settings-model-trigger,.model-default-row .field select{min-height:42px}}
