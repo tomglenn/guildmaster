@@ -10,7 +10,7 @@ import { createApp } from '../src/service/server.ts';
 import { ALLOWED_TOOLS } from '../src/domain/types.ts';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 
-for (const specialist of [false,true]) test(specialist ? 'Configured reviewer model executes the project skill without duplicate lead review' : 'Guildmaster routes a PR to a guided quest whose lead and delegate execute skill scripts and return a verdict', {timeout:30000}, async t => {
+for (const specialist of [false,true]) test(specialist ? 'Explicit adversarial review uses the configured reviewer and project skill' : 'Ordinary review retains normal agent models despite a configured adversarial reviewer', {timeout:30000}, async t => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'guildmaster-guided-review-')));
   const repo = join(root, 'repo'); const dataDir = join(root, 'data'); const trace = join(root, 'model-requests.jsonl');
   const put = async (path: string, content: string) => { await mkdir(join(path, '..'), {recursive:true}); await writeFile(path,content); };
@@ -32,11 +32,11 @@ for (const specialist of [false,true]) test(specialist ? 'Configured reviewer mo
   const app = createApp({dataDir,port:0,workerPath,defaultWorkspace:repo});
   t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});
   const {url,token}=await app.listen();
-  if(specialist){const defaults=app.service.modelDefaults.get()!;await app.service.saveModelDefaults({...defaults,specialists:{review:{model:'review-provider/reviewer',reasoning:null}},commandId:'review-model'});}
+  {const defaults=app.service.modelDefaults.get()!;await app.service.saveModelDefaults({...defaults,specialists:{review:{model:'review-provider/reviewer',reasoning:null}},commandId:'review-model'});}
   const project = (await app.service.saveProject({name:'Example',repositories:[{name:'Review app',path:repo}],commandId:'project'})).project;
   const resolved = await fetch(`${url}/api/projects/resolve?repositoryUrl=${encodeURIComponent('https://github.com/example/review-app/pull/7')}`,{headers:{Authorization:`Bearer ${token}`}}).then(response=>response.json());
   assert.equal(resolved.matches[0].projectId,project.id);
-  const gm = (await app.service.guildmaster({message:'Review https://github.com/example/review-app/pull/7 and give me a verdict.',tools:ALLOWED_TOOLS,workspaceMode:'none',model:'local-fixture/fixture',commandId:'gm-review'})).quest;
+  const gm = (await app.service.guildmaster({message:(specialist?'Perform an adversarial review of ':'Review ')+'https://github.com/example/review-app/pull/7 and give me a verdict.',tools:ALLOWED_TOOLS,workspaceMode:'none',model:'local-fixture/fixture',commandId:'gm-review'})).quest;
   for (let attempt=0;attempt<500;attempt++) {
     const quests = app.store.list();
     const failed = quests.find(quest=>['failed','interrupted','awaiting_input'].includes(quest.status));
@@ -51,6 +51,8 @@ for (const specialist of [false,true]) test(specialist ? 'Configured reviewer mo
   assert.notEqual(quest!.sessionPath,gm.sessionPath);
   const delegates=app.service.agents(quest!.id);
   assert.equal(delegates.length,1);
+  assert.equal(delegates[0].model,specialist?'review-provider/reviewer':'local-fixture/fixture');
+  assert.equal(delegates[0].modelPreference,specialist?'review':undefined);
   assert.ok(delegates[0].tools.includes('bash'));
   assert.notEqual(delegates[0].guidanceRevision,quest!.guidanceRevision);
   assert.equal(quest!.workspacePolicy,'isolated');

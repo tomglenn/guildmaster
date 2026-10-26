@@ -61,7 +61,9 @@ A service restart interrupts active work. Saved quests remain available, and you
 
 The existing Guildmaster chat picker updates the same saved choice. **New conversation** keeps that choice. Change it when Guildmaster is idle.
 
-Expand **Use different models for specific work** to choose coding, writing, or review models. Quest leads use these preferences when delegating work. Project skills still define the workflow and permissions.
+Expand **Use different models for specific work** to choose coding, writing, or adversarial review models. Quest leads use these preferences when delegating work. Project skills still define the workflow and permissions.
+
+The adversarial review model is for independent challenges to work. Ordinary reviews can stay with the quest lead. Explicit adversarial requests use a fresh delegate with this preference; configuring it does not add mandatory review stages.
 
 Existing quests and subagents keep their assigned model when resumed. Changed defaults apply to new assignments. Schedules save their lead and team choices separately from later global changes.
 

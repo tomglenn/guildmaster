@@ -18,14 +18,15 @@ globalThis.fetch = async (input, init) => {
     if (!completed.has('resolve-project')) call = ['resolve-project', 'resolve_project_repository', {repositoryUrl:'https://github.com/example/review-app/pull/7'}];
     else if (!completed.has('create-review')) {
       const match = JSON.parse(toolOutputs.find(message => message.tool_call_id === 'resolve-project').content).matches[0];
-      call = ['create-review', 'create_quest', {title:'Independent PR review', workspacePolicy:'isolated', objective:'Review https://github.com/example/review-app/pull/7 using the repository review workflow. Return a verdict without publishing.',projectId:match.projectId,repositories:[{repositoryId:match.repositoryId}]}];
+      call = ['create-review', 'create_quest', {title:'Independent PR review', workspacePolicy:'isolated', objective:(process.env.GUILDMASTER_TEST_SPECIALIST==='1'?'Perform an adversarial review of ':'Review ')+'https://github.com/example/review-app/pull/7 using the repository review workflow. Return a verdict without publishing.',projectId:match.projectId,repositories:[{repositoryId:match.repositoryId}]}];
     } else response = 'Started an independent review quest.';
   } else {
     if (!system.includes('For PR reviews use /review') || !system.includes('load_skill')) throw new Error('Repository guidance did not reach the model.');
+    if (!system.includes('You are a delegate working on one assignment') && (!system.includes('Ordinary PR reviews and other reviews may be performed by the quest lead') || !system.includes('create a fresh delegate with modelPreference=\"review\"'))) throw new Error('Adversarial routing instructions are missing.');
     if (!completed.has('load-review')) call = ['load-review', 'load_skill', {id:join(process.env.GUILDMASTER_TEST_REPO,'.claude/skills/review/SKILL.md')}];
     else if (process.env.GUILDMASTER_TEST_SPECIALIST==='1' && !system.includes('You are a delegate working on one assignment')) {
       if (!history.includes('RUN_THE_REVIEW_SCRIPT')) throw new Error('The lead must discover the project skill before delegation.');
-      if (!completed.has('delegate-verification')) call = ['delegate-verification','delegate_task',{title:'Review with project skill',modelPreference:'review',objective:'Independently run the repository review script and return its verdict. Use the review skill at .cursor/skills/review/SKILL.md; do not publish.'}];
+      if (!completed.has('delegate-verification')) call = ['delegate-verification','delegate_task',{title:'Adversarial review with project skill',modelPreference:'review',objective:'Independently run the repository review script and return its verdict. Use the review skill at .cursor/skills/review/SKILL.md; do not publish.'}];
       else if (!completed.has('wait-verification')) call = ['wait-verification','wait_for_agents',{}];
       else if (history.includes('Independent script check: APPROVE.')) response='APPROVE. The specialist completed the repository review skill. No review was published.';
       else throw new Error('Lead resumed without specialist evidence.');

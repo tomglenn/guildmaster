@@ -38,7 +38,7 @@ export default function ModelSettings({onChanged}:{onChanged:()=>Promise<void>})
       <details><summary>Use different models for specific work</summary><p>These preferences guide delegation. Project skills still define the workflow and permissions.</p>
         {row('coding','Coding','Implementation, debugging, and tests.',true)}
         {row('writing','Writing & output','Documents, reports, and deliverables.',true)}
-        {row('review','Review','Use a fresh reviewer. Choose another provider for a different perspective.',true)}
+        {row('review','Adversarial review','Used when an independent agent challenges an implementation, findings, or proposed solution. Ordinary reviews can use the quest lead.',true)}
       </details></fieldset>
       <div className="settings-save-actions"><button className="button" disabled={busy||JSON.stringify(draft)===JSON.stringify(view.defaults)}>{busy?'Saving…':'Save model defaults'}</button>{saved&&<span className="settings-saved" role="status">Saved</span>}</div>
     </form>}
