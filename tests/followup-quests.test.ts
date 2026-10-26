@@ -23,6 +23,7 @@ async function fixture(t: TestContext, git = false) {
   const project = (await service.saveProject({name:'Example',repositories:[{name:'Source',path:repo}],commandId:'project'})).project;
   const parent = (await service.create({title:'Review PRs',objective:'Start quests for the three requested PR fixes.',projectId:project.id,tools:['read','bash'],model:'test:model',instructions:'Preserve unrelated edits.',commandId:'parent'})).quest;
   parent.status='running';store.save(parent);
+  service.modelDefaults.initialize('test:quest');
   const input = {title:'Fix PR 1',objective:'Fix the concrete review blockers. PR: https://example.test/pull/1. Do not push.',userRequest:parent.objective,workspacePolicy:'shared',commandId:'first'};
   return {root,store,service,parent,project,input};
 }
@@ -33,7 +34,7 @@ test('requested follow-ups are independent linked quests with scoped context and
   const q = created.quest;
   assert.equal(q.kind,'quest'); assert.equal(q.parentQuestId,undefined);
   assert.equal(q.project?.id,project.id);
-  assert.deepEqual(q.tools,parent.tools); assert.equal(q.model,parent.model);
+  assert.deepEqual(q.tools,parent.tools); assert.equal(q.model,'test:quest');
   assert.equal(q.instructions,parent.instructions);
   assert.notEqual(q.sessionPath,parent.sessionPath);
   assert.equal(q.sourceRequest?.role,'quest'); assert.equal(q.sourceRequest?.questId,parent.id);
@@ -79,7 +80,7 @@ test('project selection is explicit when changed and arbitrary capability/path o
   const {service,parent,input,project} = await fixture(t);
   const q = (await service.createFollowup(parent.id,{...input,projectId:null,workspacePath:'/tmp',workspaceMode:'existing',tools:['write'],model:'other'},parent.activeRunId!)).quest;
   assert.equal(q.project,undefined);assert.equal(q.workspaceMode,'none');assert.notEqual(q.workspacePath,'/tmp');
-  assert.deepEqual(q.tools,parent.tools);assert.equal(q.model,parent.model);
+  assert.deepEqual(q.tools,parent.tools);assert.equal(q.model,'test:quest');
   await assert.rejects(service.createFollowup(parent.id,{...input,repositoryIds:['foreign'],commandId:'foreign-repo'},parent.activeRunId!),/repository/i);
   await service.projectAction(project.id,'archive',{commandId:'archive-project'});
   await assert.rejects(service.createFollowup(parent.id,{...input,title:'Other fix',commandId:'archived'},parent.activeRunId!),/archived/i);

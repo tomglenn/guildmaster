@@ -40,6 +40,9 @@ export interface WorkerSpec {
   sessionPath: string;
   agentDir?: string;
   model?: string;
+  execution?: import('../domain/model-defaults.ts').ModelSelection;
+  modelPreferences?: import('../domain/model-defaults.ts').ModelDefaults['specialists'];
+  buildId?: string;
   modelIdleTimeoutMs?: number;
   tools: string[];
   instructions?: string;
@@ -59,7 +62,7 @@ export type WorkerEvent =
   | { type: 'ready' }
   | { type: 'delivered'; ids: string[] }
   | { type: 'yielded' }
-  | { type: 'session'; sessionPath: string; sessionId: string; model?: string }
+  | { type: 'session'; sessionPath: string; sessionId: string; model?: string; reasoning?: string | null }
   | { type: 'message_start'; messageId: string }
   | { type: 'message'; role: 'assistant'; text: string; messageId?: string }
   | { type: 'delta'; text: string; messageId?: string }

@@ -29,7 +29,7 @@ npm start
 Guildmaster builds the interface on its first start and opens [127.0.0.1:4173](http://127.0.0.1:4173).
 
 1. Open **Settings** and connect a model provider.
-2. Choose a default model.
+2. Open **Settings → Models** and choose your model defaults.
 3. For code tasks, add your local repositories in **Projects**, or ask Guildmaster to register them.
 4. Tell Guildmaster what you want to do.
 
@@ -54,6 +54,18 @@ npm start
 ```
 
 A service restart interrupts active work. Saved quests remain available, and you can resume interrupted quests from the interface.
+
+## Model choices
+
+**Settings → Models** has independent defaults for Guildmaster, quest leads, and subagents. Each choice includes the thinking settings supported by that model.
+
+The existing Guildmaster chat picker updates the same saved choice. **New conversation** keeps that choice. Change it when Guildmaster is idle.
+
+Expand **Use different models for specific work** to choose coding, writing, or review models. Quest leads use these preferences when delegating work. Project skills still define the workflow and permissions.
+
+Existing quests and subagents keep their assigned model when resumed. Changed defaults apply to new assignments. Schedules save their lead and team choices separately from later global changes.
+
+Unavailable models and unsupported thinking settings stop the run without a fallback. Conversations with images require an image-capable model. The SDK manages context compaction; Guildmaster does not count image bytes as tokens.
 
 ## Your data and access
 

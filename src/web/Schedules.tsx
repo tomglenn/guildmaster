@@ -101,6 +101,7 @@ export default function Schedules({selectedId,onSelect,onQuest,projects,models,r
           <div><dt>Project</dt><dd>{selected.projectId?projects.find(p=>p.id===selected.projectId)?.name??'Unavailable project':'No project workspace'}</dd></div>
           <div><dt>Missed runs</dt><dd>{selected.missed==='latest'?'Run once when next available':'Skip missed runs'}</dd></div>
           <div><dt>Model</dt><dd>{models.find(m=>m.id===selected.model)?.name??(selected.model||'Default model')}</dd></div>
+          {selected.modelDefaults&&<><div><dt>Subagents</dt><dd>{selected.modelDefaults.delegate.model}</dd></div>{Object.entries(selected.modelDefaults.specialists).map(([purpose,selection])=><div key={purpose}><dt>{purpose}</dt><dd>{selection.model}</dd></div>)}<div><dt>Model defaults</dt><dd>Saved with this schedule. Global changes do not change its runs.</dd></div></>}
         </dl></section>
       </div>:<section className="schedule-history" aria-label="Run history">
         {history.length?history.map(o=><ScheduleHistoryEntry key={o.id} occurrence={o} onQuest={onQuest}/>):<div className="board-empty"><div className="empty-emblem"><Icon name="clock" size={30}/></div><h2>No runs yet</h2><p>Each occurrence will appear here with a link to its quest.</p></div>}

@@ -23,7 +23,13 @@ globalThis.fetch = async (input, init) => {
   } else {
     if (!system.includes('For PR reviews use /review') || !system.includes('load_skill')) throw new Error('Repository guidance did not reach the model.');
     if (!completed.has('load-review')) call = ['load-review', 'load_skill', {id:join(process.env.GUILDMASTER_TEST_REPO,'.claude/skills/review/SKILL.md')}];
-    else if (!completed.has('run-script')) {
+    else if (process.env.GUILDMASTER_TEST_SPECIALIST==='1' && !system.includes('You are a delegate working on one assignment')) {
+      if (!history.includes('RUN_THE_REVIEW_SCRIPT')) throw new Error('The lead must discover the project skill before delegation.');
+      if (!completed.has('delegate-verification')) call = ['delegate-verification','delegate_task',{title:'Review with project skill',modelPreference:'review',objective:'Independently run the repository review script and return its verdict. Use the review skill at .cursor/skills/review/SKILL.md; do not publish.'}];
+      else if (!completed.has('wait-verification')) call = ['wait-verification','wait_for_agents',{}];
+      else if (history.includes('Independent script check: APPROVE.')) response='APPROVE. The specialist completed the repository review skill. No review was published.';
+      else throw new Error('Lead resumed without specialist evidence.');
+    } else if (!completed.has('run-script')) {
       if (!history.includes('RUN_THE_REVIEW_SCRIPT')) throw new Error('The canonical skill body was not loaded.');
       const loaded = toolOutputs.find(message=>message.tool_call_id==='load-review').content;
       const base = [...loaded.matchAll(/Relative file base: ([^\n]+)/g)].find(match=>match[1].includes('.cursor'))?.[1];

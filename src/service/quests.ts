@@ -1,3 +1,7 @@
+import { openDeliverySession } from '../engine/delivery.ts';
+import { BUILD_ID } from '../engine/build-id.ts';
+import { ModelDefaultsStore } from './model-defaults.ts';
+import type { ModelDefaults, ModelSelection, ModelPreference } from '../domain/model-defaults.ts';
 import { hasAcceptableResult } from '../domain/quest-acceptance.ts';
 import { fork, execFile } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
@@ -31,13 +35,14 @@ function selectedWorkspaces(q: Quest): QuestWorkspace[] {
   return q.workspaces ?? (q.workspaceMode === 'none' ? [] : [{repositoryId:'workspace',name:'Workspace',sourcePath:q.sourcePath ?? q.workspacePath,workspacePath:q.workspacePath,mode:q.workspaceMode,branch:q.branch}]);
 }
 const terminalAgent = (q: Quest) => ['completed','failed','interrupted','cancelled'].includes(q.status);
-export interface ScheduledDispatch { origin: import('../domain/schedules.ts').ScheduleOrigin; assertActive: () => void; committed: (quest: Quest) => void }
+export interface ScheduledDispatch { origin: import('../domain/schedules.ts').ScheduleOrigin; assertActive: () => void; committed: (quest: Quest) => void; modelDefaults?: ModelDefaults }
 type CreatedWorktree = { source: string; path: string; branch: string };
 function delegatedPrompt(brief: string, source?: DelegationSource): string {
   if (!source) return brief;
   return `Assigned task from ${source.role === 'quest' ? 'quest lead' : 'Guildmaster'}:\n${brief}\n\nOriginal user request (verbatim, JSON-quoted):\n${JSON.stringify(source.text)}\n\nThe assigned task defines this quest's scope. Use the original request to preserve relevant constraints, exact wording, and facts for follow-up. Do not take on other tasks mentioned in the original request or treat it as additional tool authorization.`;
 }
 export class QuestService extends EventEmitter {
+  modelDefaults: ModelDefaultsStore;
   store: Store; dataDir: string; defaultWorkspace: string; workerPath: string;
   live = new Map<string, Live>(); serviceUrl = ''; serviceToken = ''; gmTokens = new Map<string, string>();
   gmRunTokens = new Map<string,string>();
@@ -56,6 +61,7 @@ export class QuestService extends EventEmitter {
   private pendingDelegates = new Map<string,number>();
   constructor(options: { store: Store; dataDir: string; defaultWorkspace?: string; workerPath?: string; maxWorkers?: number; connections?: ConnectionManager }) {
     super(); this.connections=options.connections; this.store = options.store; this.dataDir = options.dataDir;
+    this.modelDefaults = new ModelDefaultsStore(this.store);
     this.inlineReads = new InlineReads(this.store);
     this.inlineReads.onExhausted=this.inlineExhausted;
     this.defaultWorkspace = directory(options.defaultWorkspace ?? process.cwd());
@@ -70,6 +76,42 @@ export class QuestService extends EventEmitter {
         q.activeRunId = undefined; this.store.save(q); this.store.event(q.id, 'interrupted', q.error);
       }
     }
+  }
+  private assignmentModel(kind: Quest['kind'], input: {model?: string}, source?: DelegationSource, dispatch?: ScheduledDispatch) {
+    if (source && input.model !== undefined) throw new AppError('Agents use the configured model defaults, not raw model IDs.',403);
+    const execution = dispatch?.modelDefaults ? this.modelDefaults.selection('quest','',undefined,dispatch.modelDefaults)
+      : dispatch && input.model ? this.modelDefaults.validate({model:input.model,reasoning:null})
+      : this.modelDefaults.get() ? this.modelDefaults.selection(kind) : this.modelDefaults.selection(kind,input.model ?? '');
+    return {model:execution.model,execution,...(dispatch?.modelDefaults ? {teamModels:dispatch.modelDefaults} : {})};
+  }
+  private checkGuildmasterIdle() {
+    const q=this.store.list().find(q=>q.kind==='guildmaster'&&!q.archivedAt);
+    if(q && (q.activeRunId || ['queued','running','waiting','awaiting_input'].includes(q.status))) throw new AppError('Wait for the Guildmaster turn to finish before changing its model.',409);
+    return q;
+  }
+  async saveModelDefaults(input: Record<string,any>, selectionOnly=false) {
+    return this.serialize(()=>{
+      const command=this.checkCommand(input.commandId,selectionOnly?'model:guildmaster':'model:defaults',input);
+      if(command.cached)return command.cached;
+      const previous=this.modelDefaults.get()!;
+      const changingGuildmaster=selectionOnly || JSON.stringify(previous.guildmaster)!==JSON.stringify(input.guildmaster);
+      const q=changingGuildmaster ? this.checkGuildmasterIdle() : undefined;
+      let result!: {defaults:ModelDefaults};
+      this.store.transaction(()=>{
+        const defaults=selectionOnly ? this.modelDefaults.selectGuildmaster(input) : this.modelDefaults.save(input);
+        if(q && JSON.stringify(q.execution ?? {model:q.model,reasoning:null})!==JSON.stringify(defaults.guildmaster)) {
+          this.checkModelImages(q,defaults.guildmaster);q.execution={...defaults.guildmaster};q.model=q.execution.model;delete q.contextUsage;this.store.save(q);
+        }
+        result={defaults};this.store.saveCommand(command.id,command.fingerprint,result);
+      });
+      this.emit('change',{models:true});return result;
+    });
+  }
+  private checkModelImages(q: Quest, selection: ModelSelection, images?: ImageUpload[]) {
+    const model=this.modelDefaults.catalog?.find(m=>m.id===selection.model);
+    if(!model?.input || model.input.includes('image'))return;
+    const retained=existsSync(q.sessionPath) && openDeliverySession(q.sessionPath,q.workspacePath,true).buildSessionContext().messages.some(message=>'content' in message && Array.isArray(message.content) && message.content.some(part=>part.type==='image'));
+    if(images?.length || retained || this.store.pendingDeliveries(q.id).some(d=>d.attachments?.length)) throw new AppError('This conversation contains images. Choose an image-capable model.',409);
   }
   serialize<T>(fn: () => Promise<T> | T): Promise<T> {
     const next = this.queue.then(() => { if (this.stopping) throw new AppError('Service is stopping.', 503); return fn(); });
@@ -177,7 +219,7 @@ export class QuestService extends EventEmitter {
       if(!project)throw new AppError('The original repository scope is unavailable. Ask the user to clarify the target.',409);
       scope={projectId:project.id,repositories:[{repositoryId:grant.repositoryId}],workspacePolicy:'isolated',revisions:[{repositoryId:grant.repositoryId,commit:grant.commit}]};
     }
-    return this.create({...scope,commandId,title:authority.request.replace(/\s+/g,' ').trim().slice(0,120)||'Delegated user request',objective:authority.request,model:gm.model,tools:[...gm.tools]},'quest',undefined,source,undefined,guard);
+    return this.create({...scope,commandId,title:authority.request.replace(/\s+/g,' ').trim().slice(0,120)||'Delegated user request',objective:authority.request,tools:[...gm.tools]},'quest',undefined,source,undefined,guard);
   }
   changed(id: string) {
     const quest = this.store.get(id);
@@ -347,7 +389,7 @@ export class QuestService extends EventEmitter {
       const created = await this.create({
         title, objective, projectId, workspacePolicy:input.workspacePolicy as 'isolated'|'shared',
         ...(projectId ? {repositories:repositoryIds?.map(repositoryId => ({repositoryId}))} : {workspaceMode:'none'}),
-        tools:[...parent.tools], model:parent.model, instructions:parent.instructions, commandId,
+        tools:[...parent.tools], instructions:parent.instructions, commandId,
       }, 'quest', undefined, {role:'quest',questId:parentId,runId:expectedRunId,text:user.text});
       const command = this.checkCommand(input.commandId, `followup:${parentId}`, input);
       this.store.saveCommand(command.id, command.fingerprint, created);
@@ -355,7 +397,8 @@ export class QuestService extends EventEmitter {
       return created;
     });
   }
-  async createDelegate(parentId: string, input: { title?: unknown; objective: unknown; repositoryIds?: unknown; tools?: unknown; isolation?: unknown; commandId: string }, expectedRunId?: string) {
+  async createDelegate(parentId: string, input: { title?: unknown; objective: unknown; repositoryIds?: unknown; tools?: unknown; isolation?: unknown; modelPreference?: ModelPreference; commandId: string }, expectedRunId?: string) {
+    if ('model' in input || 'reasoning' in input || 'execution' in input || 'teamModels' in input) throw new AppError('Use configured model preferences for delegates.',403);
     this.lead(parentId,expectedRunId);
     return this.setup(input.commandId, `delegate:${parentId}`, input, async () => {
       const {parent,command,q,requests} = await this.serialize(() => {
@@ -381,7 +424,7 @@ export class QuestService extends EventEmitter {
         const id = randomUUID(); const first = workspaces[0];
         const q: Quest = {
           id, parentQuestId: parentId, kind: 'delegate', title: input.title ? text(input.title, 'Title', 160) : objective.split('\n')[0].slice(0,90), objective,
-          status: 'queued', tools: [...new Set(tools)] as string[], model: parent.model, instructions: parent.instructions,
+          status: 'queued', tools: [...new Set(tools)] as string[], ...(()=>{const execution=this.modelDefaults.selection('delegate',parent.model,input.modelPreference,parent.teamModels);return {model:execution.model,execution,modelPreference:input.modelPreference,teamModels:parent.teamModels};})(), instructions: parent.instructions,
           workspacePolicy: parent.workspacePolicy, project: parent.project, guidanceRevision: parent.guidanceRevision, workspaces: parent.workspaces || requests ? workspaces : undefined,
           workspaceMode: first?.mode ?? parent.workspaceMode, workspacePath: first?.workspacePath ?? parent.workspacePath,
           sourcePath: first?.sourcePath ?? parent.sourcePath, branch: first ? first.branch : parent.branch,
@@ -474,7 +517,7 @@ export class QuestService extends EventEmitter {
       } finally { if (!saved) await prepared.cleanup(); }
     });
   }
-  async continueDelegate(parentId: string, id: string, input: { message?: unknown; freshContext?: unknown; isolation?: unknown; commandId: string }, expectedRunId?: string) {
+  async continueDelegate(parentId: string, id: string, input: { message?: unknown; freshContext?: unknown; isolation?: unknown; modelPreference?: ModelPreference; commandId: string }, expectedRunId?: string) {
     this.lead(parentId,expectedRunId);
     if (this.get(id).parentQuestId !== parentId) throw new AppError('This delegate belongs to another quest.',403);
     return this.setup(input.commandId,`continue:${id}`,input,async()=>{
@@ -659,7 +702,7 @@ export class QuestService extends EventEmitter {
             objective:snapshot.objective,kind:'quest',workspacePolicy:'isolated',workspaces:prepared.workspaces,
             workspacePath:first.workspacePath,workspaceMode:'worktree',sourcePath:first.sourcePath,branch:undefined,
             guidanceRevision:prepared.guidanceRevision,outputPath:prepared.outputPath,isolation:snapshot.requests,
-            model:typeof input.model === 'string' ? input.model.trim().slice(0,250) : '',tools:[...new Set(snapshot.tools)],
+            ...this.assignmentModel('quest',input,sourceRequest,dispatch),tools:[...new Set(snapshot.tools)],
             instructions:typeof input.instructions === 'string' ? input.instructions.slice(0,20000) : '',
             createdAt:Date.now(),updatedAt:Date.now(),status:'queued',runCount:0,
             sessionPath:join(this.dataDir,'sessions',snapshot.id,'session.jsonl'),...(dispatch ? {schedule:dispatch.origin} : {}),...(sourceRequest ? {sourceRequest} : {}),
@@ -699,7 +742,7 @@ export class QuestService extends EventEmitter {
         const q: Quest = {
           id, title: kind === 'guildmaster' ? 'Guildmaster' : input.title ? text(input.title, 'Title', 160) : objective.split('\n')[0].slice(0, 90), objective, kind,
           ...workspace, workspacePolicy:input.workspacePolicy,
-          model: typeof input.model === 'string' ? input.model.trim().slice(0, 250) : '', tools: [...new Set(tools)],
+          ...this.assignmentModel(kind,input,sourceRequest,dispatch), tools: [...new Set(tools)],
           instructions: typeof input.instructions === 'string' ? input.instructions.slice(0, 20000) : '',
           createdAt: Date.now(), updatedAt: Date.now(), status: 'queued', runCount: 0,
           sessionPath: join(this.dataDir, 'sessions', id, 'session.jsonl'),
@@ -744,10 +787,14 @@ export class QuestService extends EventEmitter {
   }
   prepare(q: Quest, prompt: string, commandId: string, delivery?: Delivery, sourcePrompt = prompt, presentation?: MessagePresentation, images?: ImageUpload[]) {
     if (q.closedAt !== undefined) throw new AppError('Reopen this quest before continuing it.',409);
+    const execution=this.modelDefaults.validate(q.execution ?? {model:q.model,reasoning:null});
+    q.execution=execution;
     delete q.reopenedAt;
     const inheritedRun = presentation?.source === 'quest_lead' ? (q.parentQuestId ? this.get(q.parentQuestId).activeRunId : q.sourceRequest?.runId)
       : presentation?.source === 'guildmaster' ? q.sourceRequest?.runId : undefined;
-    const attachments = this.store.saveImages(q.id, images ?? this.runImages(inheritedRun));
+    const inputImages=images ?? this.runImages(inheritedRun);
+    this.checkModelImages(q,execution,inputImages);
+    const attachments = this.store.saveImages(q.id, inputImages);
     if (q.kind !== 'guildmaster' && !q.guidanceRevision) {
       const manifest = discoverGuidance(q.workspaces ?? (q.workspaceMode === 'none' ? [] : [{ repositoryId: 'workspace', workspacePath: q.workspacePath, sourcePath: q.sourcePath ?? q.workspacePath }]), { agentDir: join(this.dataDir, 'engine') });
       const revision = randomUUID();
@@ -764,7 +811,7 @@ export class QuestService extends EventEmitter {
     const available=this.connections?.snapshot() ?? [];
     const inherited=q.parentQuestId ? this.store.lastRun(q.parentQuestId)?.data.connectionGrants ?? [] : available;
     const connectionGrants=inherited.flatMap(grant=>{const current=available.find(c=>c.connectionId===grant.connectionId&&c.teamId===grant.teamId&&c.userId===grant.userId);return current?[{...current,tools:current.tools.filter(t=>grant.tools.some(old=>old.name===t.name))}]:[];});
-    this.store.run(q.activeRunId, q.id, { connectionGrants, status: 'queued', prompt, sourcePrompt, commandId, messageId: message.id, messageSource: message.source, displayText: message.displayText, deliveryIds: this.store.pendingDeliveries(q.id).map(delivery => delivery.id), queuedAt: Date.now() });
+    this.store.run(q.activeRunId, q.id, { execution:{...execution}, connectionGrants, status: 'queued', prompt, sourcePrompt, commandId, messageId: message.id, messageSource: message.source, displayText: message.displayText, deliveryIds: this.store.pendingDeliveries(q.id).map(delivery => delivery.id), queuedAt: Date.now() });
     this.store.event(q.id, 'queued', `Run ${q.runCount} queued.`);
     return message;
   }
@@ -791,11 +838,13 @@ export class QuestService extends EventEmitter {
     const inline=this.inlineReads.attach(q,runId);
     this.connectionTokens.set(connectionToken,{questId:q.id,runId,grants:connectionGrants,controller:new AbortController()});
     try {
+      const execution=this.store.getRun(runId)?.data.execution ?? q.execution;
+      if(execution)this.modelDefaults.validate(execution);
       const specDir = join(this.dataDir, 'runs'); mkdirSync(specDir, { recursive: true });
       const path = join(specDir, `${runId}.json`);
       if (q.kind === 'guildmaster') {this.gmTokens.set(token, q.id);this.gmRunTokens.set(token,runId);}
       if (q.kind === 'quest') this.workerTokens.set(token, { questId: q.id, runId });
-      writeFileSync(path, JSON.stringify({ questId: q.id, runId, cwd: q.workspacePath, prompt,
+      writeFileSync(path, JSON.stringify({ buildId:BUILD_ID, questId: q.id, runId, cwd: q.workspacePath, prompt,
         deliveries: this.store.pendingDeliveries(q.id).map(delivery => ({ ...delivery, images: delivery.attachments?.map(attachment => {
           const image = this.store.image(q.id, attachment.id);
           if (!image) throw new AppError('A saved reference image is missing. Attach it again before continuing.',409);
@@ -804,7 +853,7 @@ export class QuestService extends EventEmitter {
         requireExistingSession: q.sessionStartRun
           ? q.sessionEstablished === true
           : !!q.result || this.store.deliveries(q.id).some(delivery => !!delivery.deliveredAt),
-        sessionPath: q.sessionPath, model: q.model, tools: q.tools, instructions: q.instructions,
+        sessionPath: q.sessionPath, model: execution?.model ?? q.model, execution, modelPreferences:(q.teamModels ?? this.modelDefaults.get())?.specialists, tools: q.tools, instructions: q.instructions,
         ...inline, imageToken, connectionToken, connectionGrants, role: q.kind, parentQuestId: q.parentQuestId, questBoard: q.kind === 'guildmaster' ? this.questBoardSnapshot() : undefined, serviceUrl: this.serviceUrl, serviceToken: token, workspaceMode: q.workspaceMode,
         sourcePath: q.sourcePath, guidancePath: q.guidanceRevision ? join(this.dataDir, 'guidance', `${q.guidanceRevision}.json`) : undefined,
         agentDir: join(this.dataDir, 'engine'), project: q.project, workspaces: q.workspaces, workspacePolicy:q.workspacePolicy, isolation:q.isolation, preparedWorkspaces:q.preparedWorkspaces, outputPath:q.outputPath,
@@ -866,7 +915,10 @@ export class QuestService extends EventEmitter {
       this.store.save(q);
     } else if (m.type === 'session') {
       // Never accept an arbitrary session path from an engine event.
-      if (typeof m.model === 'string') q.model = m.model;
+      const expected=this.store.getRun(runId)?.data.execution;
+      if(expected?.model && (m.model!==expected.model || (expected.reasoning!==null && m.reasoning!==expected.reasoning))) throw new AppError('Worker selected a different model or thinking setting.',409);
+      if(expected?.model)this.store.run(runId,id,{actualExecution:{model:m.model,reasoning:m.reasoning ?? null}});
+      else if (typeof m.model === 'string') q.model = m.model;
       this.store.save(q); this.store.event(id, 'session', q.sessionStartRun === q.runCount ? 'Fresh conversation started for this assignment.' : q.runCount > 1 ? 'Saved conversation resumed.' : 'Conversation saved.');
     } else if (m.type === 'message_start') {
       this.updateLive(id, runId, text(m.messageId, 'Message ID', 200), ''); return;
@@ -1193,6 +1245,7 @@ export class QuestService extends EventEmitter {
   async guildmaster(input: Record<string, any>) {
     const images = validateImages(input.images);
     const existing = this.store.list().find(q => q.kind === 'guildmaster' && !q.archivedAt);
+    if (input.model !== undefined && this.modelDefaults.get() && input.model !== this.modelDefaults.get()!.guildmaster.model) throw new AppError('The Guildmaster model changed. Refresh before sending.',409);
     if (!existing) return this.create({ objective: imageMessage(input.message, images), images, workspacePath: input.workspacePath,
       workspaceMode: input.workspaceMode, model: input.model, tools: input.tools, commandId: input.commandId,
       projectId: input.projectId, repositories: input.repositories }, 'guildmaster', input);
@@ -1212,7 +1265,8 @@ export class QuestService extends EventEmitter {
           workspaceMode: input.workspaceMode ?? ((input.projectId !== undefined && input.projectId !== null) || input.workspacePath !== undefined || input.repositories !== undefined ? 'existing' : existing.workspaceMode),
         }, existing.id, 'guildmaster', []));
       }
-      if (input.model !== undefined) existing.model = String(input.model);
+      if(this.modelDefaults.get()) {existing.execution=this.modelDefaults.selection('guildmaster');existing.model=existing.execution.model;}
+      else if (input.model !== undefined) existing.model = String(input.model);
       if (input.tools) {
         if (!Array.isArray(input.tools) || input.tools.some((t: string) => !ALLOWED_TOOLS.includes(t))) throw new AppError('Unknown tool capability.');
         existing.tools = input.tools;

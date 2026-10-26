@@ -1,3 +1,4 @@
+import { describeModel, type CatalogModel } from './models.ts';
 import { access, chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -11,7 +12,7 @@ const MAX_ACTIVE_LOGINS = 8;
 
 export interface EngineSettingsView {
   providers: Array<{ id: string; name: string; configured: boolean; authMethods: string[] }>;
-  models: Array<{ id: string; name: string; provider: string }>;
+  models: CatalogModel[];
   defaultModel: string;
   providerError?: string;
   canImportPi: boolean;
@@ -103,7 +104,7 @@ export class EngineSettings {
           ...(provider.auth.oauth ? ['oauth'] : []),
         ],
       })).sort((a, b) => a.name.localeCompare(b.name)),
-      models: runtime.getAvailableSnapshot().map((model) => ({ id: `${model.provider}/${model.id}`, name: model.name, provider: model.provider }))
+      models: runtime.getAvailableSnapshot().map(model => describeModel(model))
         .sort((a, b) => a.id.localeCompare(b.id)),
       defaultModel: typeof settings.defaultProvider === 'string' && typeof settings.defaultModel === 'string'
         ? `${settings.defaultProvider}/${settings.defaultModel}` : '',

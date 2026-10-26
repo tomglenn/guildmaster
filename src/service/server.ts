@@ -1,3 +1,4 @@
+import type { ModelInfo } from '../domain/model-defaults.ts';
 import { questFile } from './quest-files.ts';
 import { ImageGeneration } from './image-generation.ts';
 import { SchedulesService } from './schedules.ts';
@@ -25,7 +26,7 @@ function questSummary(q: ReturnType<Store['list']>[number]) {
   return { id:q.id,title:q.title,status:q.status,archivedAt:q.archivedAt,workspaceMode:q.workspaceMode,workspacePath:q.workspacePath,
     schedule:q.schedule,workspacePolicy:q.workspacePolicy,isolation:q.isolation,queueReason:q.queueReason,project:q.project ? { id:q.project.id,name:q.project.name } : undefined,workspaces:q.workspaces,model:q.model,runCount:q.runCount,error:q.error,agentSummary:q.agentSummary };
 }
-export function createApp(options: { dataDir: string; port?: number; workerPath?: string; defaultWorkspace?: string; models?: {id:string;name:string}[]; staticDir?: string; maxWorkers?: number; imageGenerationOptions?: { fetch?: typeof fetch; timeoutMs?: number }; connectionOptions?: Omit<ConstructorParameters<typeof ConnectionManager>[0], 'store'|'dataDir'> }) {
+export function createApp(options: { dataDir: string; port?: number; workerPath?: string; defaultWorkspace?: string; models?: ModelInfo[]; staticDir?: string; maxWorkers?: number; imageGenerationOptions?: { fetch?: typeof fetch; timeoutMs?: number }; connectionOptions?: Omit<ConstructorParameters<typeof ConnectionManager>[0], 'store'|'dataDir'> }) {
   const dataDir = resolve(options.dataDir); const store = new Store(dataDir);
   const settings = new EngineSettings(dataDir);
   const connections=new ConnectionManager({store,dataDir,...options.connectionOptions});
@@ -35,12 +36,19 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
   const schedules=new SchedulesService(service);
   const token = randomBytes(32).toString('hex'); let port = options.port ?? 4173; let listening = false;
   const clients = new Set<ServerResponse>(); const staticDir = resolve(options.staticDir ?? join(projectRoot, 'dist'));
-  let modelsPromise: Promise<{models:{id:string;name:string}[];modelError?:string}> | undefined;
+  let modelsPromise: Promise<{models:ModelInfo[];modelError?:string}> | undefined;
   async function models() {
     if (options.models) return { models: options.models };
     modelsPromise ??= settings.get().then(view => ({models:view.models,modelError:view.providerError}))
       .catch(() => ({models:[],modelError:'Provider settings could not be loaded. Open Settings to check your configuration.'}));
     return modelsPromise;
+  }
+  async function loadModelDefaults() {
+    const available=await models();
+    service.modelDefaults.catalog=options.workerPath && !available.models.length ? undefined : available.models;
+    const defaults=service.modelDefaults.initialize((await settings.getDefaultModel()) || available.models[0]?.id || '');
+    schedules.initializeModelDefaults();
+    return defaults;
   }
   const broadcast = (event: string, data: unknown) => {
     for (const client of clients) {
@@ -154,12 +162,13 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         try {const result=await connections.call(grant,input.tool,input.arguments,AbortSignal.any([run!.controller.signal,controller.signal]));active();service.inlineReads.toolBudget(run!.questId);json(res,200,result);}finally{res.off('close',onClose);}return;
       }
       if (req.method === 'GET' && path === '/api/health') { json(res, 200, {ok:true,version:'0.1.0',dataDir,capabilities:{isolatedQuests:true,followupQuests:true,schedules:true,questLifecycle:true,questInbox:true}}); return; }
+      if(path.startsWith('/api/') && path!=='/api/health') await loadModelDefaults();
       if (req.method === 'GET' && path === '/api/bootstrap') {
         if (req.headers.authorization && !authorize(req).human) throw new AppError('Only the user can open the browser session.',403);
         res.setHeader('Set-Cookie', `guildmaster_token=${token}; HttpOnly; SameSite=Strict; Path=/`);
         const available = await models();
         json(res, 200, { ...service.board(),
-          ...available, defaultModel: await settings.getDefaultModel(), defaultWorkspace: service.defaultWorkspace,
+          ...available, modelDefaults:service.modelDefaults.get(), defaultModel:service.modelDefaults.get()?.guildmaster.model ?? await settings.getDefaultModel(), defaultWorkspace: service.defaultWorkspace,
           projects: store.projects(), dataDir, version:'0.1.0' }); return;
       }
       if (path.startsWith('/api/')) {
@@ -196,7 +205,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         if (path === '/api/schedule-drafts') {
           if (!auth.gm) throw new AppError('Only Guildmaster can prepare schedule drafts.',403);
           if (req.method !== 'POST') throw new AppError('Method not allowed.',405);
-          const input=await body(req);input.model??=auth.gm.model;input.tools??=auth.gm.tools;
+          const input=await body(req);if(input.model!==undefined)throw new AppError('Schedule drafts use configured quest defaults.',403);input.model=service.modelDefaults.get()?.quest.model;input.tools??=auth.gm.tools;
           if(!Array.isArray(input.tools)||input.tools.some((tool:string)=>!auth.gm!.tools.includes(tool)))throw new AppError('The draft cannot expand Guildmaster capabilities.',403);
           json(res,201,await schedules.draft(input));return;
         }
@@ -218,7 +227,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
           }
           if(req.method==='POST') {
             const input=await body(req);
-            if(path==='/api/schedules'||(match&&!match[2])){input.model||=(await settings.getDefaultModel())||(await models()).models[0]?.id;json(res,200,await schedules.save(input,match?.[1]));return;}
+            if(path==='/api/schedules'||(match&&!match[2])){input.model||=service.modelDefaults.get()?.quest.model;json(res,200,await schedules.save(input,match?.[1]));return;}
             if(match&&['pause','resume','delete','run'].includes(match[2])){json(res,200,await schedules.action(match[1],match[2] as 'pause'|'resume'|'delete'|'run',input));return;}
           }
           throw new AppError('Endpoint not found.',404);
@@ -333,6 +342,13 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
           const {enabled,mock,model,configured,defaultQuality,defaultSize} = view;
           json(res,200,{enabled,mock,model,configured,defaultQuality,defaultSize}); return;
         }
+        if(path==='/api/settings/models' || path==='/api/guildmaster/model') {
+          if(!auth.human)throw new AppError('Only the user can change model settings.',403);
+          if(req.method==='GET')json(res,200,{defaults:service.modelDefaults.get(),...(await models())});
+          else if(req.method==='POST')json(res,200,await service.saveModelDefaults(await body(req),path==='/api/guildmaster/model'));
+          else throw new AppError('Method not allowed.',405);
+          return;
+        }
         if (path === '/api/settings' || path.startsWith('/api/settings/')) {
           if (!auth.human) throw new AppError('Only the user can configure model providers.',403);
           const providerPath = path.match(/^\/api\/settings\/provider\/([^/]+)$/);
@@ -388,7 +404,6 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
               if (input.workspaceMode !== 'none' && directory(input.workspacePath) !== auth.gm.workspacePath) throw new AppError('Register this workspace as a project before creating the quest.',403);
             }
           }
-          input.model ??= await settings.getDefaultModel();
           const created = await service.create(input as any, 'quest', undefined, auth.gm ? service.delegationSource(auth.gm) : undefined);
           json(res,201,auth.human?created:{quest:questSummary(created.quest)}); return;
         }
@@ -408,7 +423,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         const requestPath = path.match(/^\/api\/requests\/([^/]+)\/answer$/);
         if (requestPath) { json(res,200,await service.answer(decodeURIComponent(requestPath[1]),input as any)); return; }
         if (path === '/api/guildmaster/new') { json(res,200,await service.newGuildmaster(input as any)); return; }
-        if (path === '/api/guildmaster') { input.model ??= await settings.getDefaultModel(); json(res,200,await service.guildmaster(input)); return; }
+        if (path === '/api/guildmaster') { json(res,200,await service.guildmaster(input)); return; }
         throw new AppError('Endpoint not found.',404);
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new AppError('Method not allowed.',405);
@@ -429,6 +444,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
     async listen() {
       await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port,'127.0.0.1', () => { server.removeListener('error', reject); resolve(); }); });
       port = (server.address() as {port:number}).port; listening = true;
+      await loadModelDefaults();
       const url = `http://127.0.0.1:${port}`; service.serviceUrl = url; service.serviceToken = token; connections.serviceUrl=url; archiveStorage.start();schedules.start();
       return {url,token};
     },

@@ -88,7 +88,7 @@ export function guildmasterTools(spec: WorkerSpec): ToolDefinition<any>[] {
       execute: async(id,args,signal)=>{
         const health=await request('/api/health','GET',undefined,signal);
         if(health.capabilities?.schedules!==true)throw new Error('Restart the local service after active work finishes to enable schedules. No schedule was created.');
-        return api('/api/schedule-drafts','POST',{...(args as object),model:spec.model,tools:spec.tools,commandId:`${spec.runId}:${id}`},signal);
+        return api('/api/schedule-drafts','POST',{...(args as object),tools:spec.tools,commandId:`${spec.runId}:${id}`},signal);
       },
     },
     {
@@ -161,7 +161,7 @@ export function guildmasterTools(spec: WorkerSpec): ToolDefinition<any>[] {
           mode: Type.Optional(Type.Union([Type.Literal('existing'), Type.Literal('worktree')])),
         }))),
         workspaceMode: Type.Optional(Type.Union([Type.Literal('existing'), Type.Literal('worktree'), Type.Literal('none')])),
-        workspacePath: Type.Optional(Type.String()), model: Type.Optional(Type.String()),
+        workspacePath: Type.Optional(Type.String()),
         tools: Type.Optional(Type.Array(Type.String())), instructions: Type.Optional(Type.String()),
       }),
       execute: async (id, rawArgs, signal) => {
@@ -186,7 +186,6 @@ export function guildmasterTools(spec: WorkerSpec): ToolDefinition<any>[] {
             workspacePath: mode === 'none' ? undefined : args.workspacePath ?? spec.cwd,
           }),
           tools: args.tools ?? spec.tools,
-          model: args.model ?? spec.model,
           commandId: `${spec.runId}:${id}`,
         }, signal);
       },

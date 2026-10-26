@@ -21,6 +21,9 @@ export interface Quest {
   workspaceMode: WorkspaceMode; workspacePath: string; sourcePath?: string; branch?: string;
   model: string; tools: string[]; instructions: string; createdAt: number; updatedAt: number; statusChangedAt?: number;
   sessionPath: string; error?: string; result?: string; runCount: number; activeRunId?: string;
+  execution?: import('./model-defaults.ts').ModelSelection;
+  modelPreference?: import('./model-defaults.ts').ModelPreference;
+  teamModels?: import('./model-defaults.ts').ModelDefaults;
   contextUsage?: ContextUsage;
   guidanceRevision?: string; sessionStartRun?: number; sessionEstablished?: boolean;
   schedule?: import('./schedules.ts').ScheduleOrigin;

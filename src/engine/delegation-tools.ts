@@ -62,6 +62,7 @@ export function delegationTools(spec: WorkerSpec, onWait: (toolCallId: string) =
       promptSnippet: 'Delegate independent assignments within this quest, then wait without polling.',
       parameters: Type.Object({
         title: Type.String({ minLength: 1, maxLength: 160 }),
+        modelPreference: Type.Optional(Type.Union([Type.Literal('coding'),Type.Literal('writing'),Type.Literal('review')], {description:'Use the configured model for this work. Omit for the subagent default. This does not change the project skill, workflow, tools, or permissions. Review work uses a fresh assignment with the applicable skill instructions.'})),
         objective: Type.String({ minLength: 1, description: 'Focused assignment including relevant constraints and completion criteria.' }),
         repositoryIds: Type.Optional(Type.Array(Type.String())),
         isolation: isolationSchema,

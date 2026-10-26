@@ -5,6 +5,7 @@ export interface ScheduleConfig {
   name: string; objective: string; recurrence: Recurrence; missed: 'latest' | 'skip';
   projectId: string | null; repositoryIds?: string[]; workspacePolicy: WorkspacePolicy;
   model: string; tools: string[];
+  modelDefaults?: import('./model-defaults.ts').ModelDefaults;
 }
 export interface QuestSchedule extends ScheduleConfig {
   id: string; revision: number; enabled: boolean; nextAt: number; createdAt: number; updatedAt: number;

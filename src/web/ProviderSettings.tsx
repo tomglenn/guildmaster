@@ -1,3 +1,4 @@
+import ModelSettings from './ModelSettings';
 import StorageSettings from './StorageSettings';
 import ConnectionsSettings from './ConnectionsSettings';
 import useStoredTab from './useStoredTab';
@@ -19,18 +20,16 @@ async function request<T>(path: string, body?: unknown, method = 'POST'): Promis
 const safeUrl = (value?: string) => value && /^https?:\/\//i.test(value) ? value : undefined;
 
 export default function ProviderSettings({ onChanged }: { onChanged: (model?: string) => Promise<void> }) {
-  const [tab, setTab] = useStoredTab('guildmaster:settings-tab', ['providers', 'connections', 'images', 'appearance', 'storage'], 'providers');
+  const [tab, setTab] = useStoredTab('guildmaster:settings-tab', ['providers', 'models', 'connections', 'images', 'appearance', 'storage'], 'providers');
   const [connecting, setConnecting] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { if (connecting) dialog.current?.showModal(); }, [connecting]);
   const [config, setConfig] = useState<Configuration | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [modelSaved, setModelSaved] = useState(false);
   const [busy, setBusy] = useState('');
   const [selected, setSelected] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [defaultModel, setDefaultModel] = useState('');
   const [login, setLogin] = useState<Login | null>(null);
   const [answer, setAnswer] = useState('');
   const [removeId, setRemoveId] = useState('');
@@ -38,7 +37,7 @@ export default function ProviderSettings({ onChanged }: { onChanged: (model?: st
   const activeLoginId = useRef<string | null>(null);
   const refresh = useCallback(async () => {
     const next = await request<Configuration>('');
-    setConfig(next); setDefaultModel(next.defaultModel || '');
+    setConfig(next);
     setSelected(previous => previous || next.providers.find(p => !p.configured)?.id || next.providers[0]?.id || '');
     return next;
   }, []);
@@ -85,12 +84,14 @@ export default function ProviderSettings({ onChanged }: { onChanged: (model?: st
     <div className="page-heading"><div><h1>Settings</h1></div></div>
     <div className="detail-tabs settings-tabs" aria-label="Settings views">
       <button className={tab === 'providers' ? 'selected' : ''} aria-pressed={tab === 'providers'} onClick={() => setTab('providers')}><Icon name="providers" size={15}/>Providers</button>
+      <button className={tab === 'models' ? 'selected' : ''} aria-pressed={tab === 'models'} onClick={() => setTab('models')}><Icon name="brain" size={15}/>Models</button>
       <button className={tab === 'connections' ? 'selected' : ''} aria-pressed={tab === 'connections'} onClick={() => setTab('connections')}><Icon name="connections" size={15}/>Connections</button>
       <button className={tab === 'images' ? 'selected' : ''} aria-pressed={tab === 'images'} onClick={() => setTab('images')}><Icon name="image" size={15}/>Images</button>
       <button className={tab === 'appearance' ? 'selected' : ''} aria-pressed={tab === 'appearance'} onClick={() => setTab('appearance')}><Icon name="palette" size={15}/>Appearance</button>
       <button className={tab === 'storage' ? 'selected' : ''} aria-pressed={tab === 'storage'} onClick={() => setTab('storage')}><Icon name="archive" size={15}/>Storage</button>
     </div>
     </div>
+    {tab === 'models' && <ModelSettings onChanged={() => onChanged()}/>}
     {tab === 'storage' && <StorageSettings onChanged={() => onChanged()}/>}
     {tab === 'connections' && <ConnectionsSettings/>}
     {tab === 'images' && <ImageGenerationSettings/>}
@@ -113,7 +114,7 @@ export default function ProviderSettings({ onChanged }: { onChanged: (model?: st
       </div>
       </dialog>}
     </section>
-    <section className="settings-section"><div className="settings-section-title"><div><h2>Default model</h2><p>Used for new Guildmaster conversations and quests. Existing quests keep their selected model.</p></div></div><form onSubmit={e => { e.preventDefault(); void perform('preferences', async () => { setModelSaved(false); await request('/preferences', { defaultModel }); await onChanged(defaultModel); await refresh(); setModelSaved(true); }); }}><label className="field">Model<select value={defaultModel} onChange={e => { setDefaultModel(e.target.value); setModelSaved(false); }}><option value="">Use the default available model</option>{config.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</select>{!config.models.length && <small>Connect a provider to see available models.</small>}</label><div className="settings-save-actions"><button className="button" disabled={!!busy || defaultModel === config.defaultModel}>{busy === 'preferences' ? 'Saving…' : 'Save default model'}</button>{modelSaved && <span className="settings-saved" role="status"><Icon name="check" size={14}/>Saved</span>}</div></form></section>
+
     {config.canImportPi && <section className="settings-section import-settings"><div><h2>Already using Pi?</h2><p>You can optionally import your existing provider credentials. Guildmaster keeps its own copy from then on.</p></div><button className="button" disabled={!!busy || loginActive} onClick={() => void perform('import', async () => { await request('/import-pi', {}); const next = await refresh(); await onChanged(next.defaultModel); setNotice('Existing Pi provider configuration imported.'); })}>{busy === 'import' ? 'Importing…' : 'Import Pi configuration'}</button></section>}
   </>}</div></div>;
 }

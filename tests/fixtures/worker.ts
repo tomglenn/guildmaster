@@ -42,7 +42,7 @@ if (Array.isArray(spec.deliveries)) {
   await writeFile(sessionPath, JSON.stringify({ history, deliveryIds: savedIds }));
 }
 const questionId = spec.prompt.includes('[fixed-question]') ? 'same-engine-question-id' : `question-${spec.runId}`;
-send({ type: 'session', sessionPath, sessionId: 'fake-session', model: 'fake/test' });
+send({ type: 'session', sessionPath, sessionId: 'fake-session', model: spec.execution?.model || spec.model || 'fake/test', reasoning: spec.execution?.reasoning ?? null });
 if (spec.prompt.includes('[write]')) await writeFile(join(spec.cwd, 'quest-result.txt'), 'Work produced by the fake test worker.');
 
 const finish = (text: string) => {

@@ -1009,3 +1009,9 @@ select:not([multiple]),.field select:not([multiple]){appearance:none;-webkit-app
 .schedule-header-timing{position:relative;display:inline-block;max-width:100%;margin-top:10px;font-size:14px;line-height:1.6;color:var(--muted)}
 .schedule-timing-tooltip{position:absolute;top:calc(100% + 8px);left:0;z-index:40;width:max-content;max-width:min(360px,calc(100vw - 48px));padding:9px 12px;border:1px solid var(--line);border-radius:7px;background:var(--surface-raised);box-shadow:0 4px 16px #0002;color:var(--secondary);font-size:12px;line-height:1.6;visibility:hidden;opacity:0;pointer-events:none}
 .schedule-header-timing:hover .schedule-timing-tooltip,.schedule-header-timing:focus-visible .schedule-timing-tooltip{visibility:visible;opacity:1}
+
+.providers-settings .model-settings>form{max-width:920px}
+.model-default-fields{border:0;padding:0;margin:0;min-width:0}
+.model-default-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(150px,.65fr);gap:20px;align-items:start;padding:20px 0;border-bottom:1px solid var(--line)}
+.model-default-row>div{min-width:0}.model-default-row p,.model-default-fields details>p{color:var(--muted);font-size:13px;line-height:1.6;margin-top:6px}.model-default-row .field{margin:0;min-width:0}.model-default-row select{width:100%}.model-default-fields summary{cursor:pointer;padding:20px 0 8px;font-weight:500}
+@media(max-width:700px){.model-default-row{grid-template-columns:minmax(0,1fr);gap:12px}}

@@ -133,15 +133,20 @@ export class Store {
   saveDelivery(delivery: Delivery) { this.db.prepare('INSERT INTO deliveries VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(delivery.id, delivery.questId, JSON.stringify(delivery)); }
   deliveries(questId: string): Delivery[] { return (this.db.prepare('SELECT data FROM deliveries WHERE questId=? ORDER BY rowid').all(questId) as { data: string }[]).map(row => JSON.parse(row.data)); }
   pendingDeliveries(questId: string): Delivery[] { return this.deliveries(questId).filter(delivery => !delivery.deliveredAt && !delivery.cancelledAt); }
-  run(id: string, questId: string, data: unknown) { this.db.prepare('INSERT INTO runs VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=json_patch(runs.data,excluded.data)').run(id, questId, JSON.stringify(data)); }
-  runs(questId: string): { id: string; data: { connectionGrants?: import('../connections/types.ts').ConnectionGrant[]; prompt?: string; sourcePrompt?: string; commandId?: string; messageId?: string; messageSource?: Message['source']; displayText?: string; queuedAt?: number; startedAt?: number; deliveryIds?: string[] } }[] {
+  run(id: string, questId: string, data: unknown) {
+    const previous=this.getRun(id);const patch=data as Record<string,unknown>;
+    if(previous && previous.questId!==questId) throw new AppError('Run belongs to another quest.',403);
+    if(previous?.data.execution && patch.execution!==undefined && JSON.stringify(previous.data.execution)!==JSON.stringify(patch.execution)) throw new AppError('Run model selection cannot change.',409);
+    this.db.prepare('INSERT INTO runs VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(id,questId,JSON.stringify({...previous?.data,...patch}));
+  }
+  runs(questId: string): { id: string; data: { execution?: import('../domain/model-defaults.ts').ModelSelection; actualExecution?: import('../domain/model-defaults.ts').ModelSelection; connectionGrants?: import('../connections/types.ts').ConnectionGrant[]; prompt?: string; sourcePrompt?: string; commandId?: string; messageId?: string; messageSource?: Message['source']; displayText?: string; queuedAt?: number; startedAt?: number; deliveryIds?: string[] } }[] {
     return (this.db.prepare('SELECT id,data FROM runs WHERE questId=? ORDER BY rowid').all(questId) as { id: string; data: string }[]).map(row => ({ id: row.id, data: JSON.parse(row.data) }));
   }
-  lastRun(questId: string): { id: string; data: { connectionGrants?: import('../connections/types.ts').ConnectionGrant[]; prompt?: string; sourcePrompt?: string } } | undefined {
+  lastRun(questId: string): { id: string; data: { execution?: import('../domain/model-defaults.ts').ModelSelection; actualExecution?: import('../domain/model-defaults.ts').ModelSelection; connectionGrants?: import('../connections/types.ts').ConnectionGrant[]; prompt?: string; sourcePrompt?: string } } | undefined {
     const row = this.db.prepare('SELECT id,data FROM runs WHERE questId=? ORDER BY rowid DESC LIMIT 1').get(questId) as { id: string; data: string } | undefined;
     return row ? { id: row.id, data: JSON.parse(row.data) } : undefined;
   }
-  getRun(id: string): { questId: string; data: { messageId?: string; connectionGrants?: import('../connections/types.ts').ConnectionGrant[]; prompt?: string; sourcePrompt?: string; deliveryIds?: string[] } } | undefined {
+  getRun(id: string): { questId: string; data: { execution?: import('../domain/model-defaults.ts').ModelSelection; actualExecution?: import('../domain/model-defaults.ts').ModelSelection; messageId?: string; connectionGrants?: import('../connections/types.ts').ConnectionGrant[]; prompt?: string; sourcePrompt?: string; deliveryIds?: string[] } } | undefined {
     const row = this.db.prepare('SELECT questId,data FROM runs WHERE id=?').get(id) as {questId: string; data: string} | undefined;
     return row ? { questId: row.questId, data: JSON.parse(row.data) } : undefined;
   }

@@ -1,6 +1,13 @@
 // Test-only transport. No requests leave this process. Production never imports it.
 import { appendFileSync } from 'node:fs';
 
+// Force the lost-ack boundary independently of SDK microtask scheduling. The
+// native prompt is still persisted; the process exits at the intercepted fetch.
+if (process.env.GUILDMASTER_TEST_EXIT_BEFORE_RESPONSE === '1') {
+  const send=process.send?.bind(process);
+  process.send=(message,...args)=>message?.type==='delivered' ? true : send?.(message,...args);
+}
+
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url ?? String(input);
   if (!url.startsWith('http://fixture.invalid/v1/')) throw new Error(`Unexpected fixture request: ${url}`);

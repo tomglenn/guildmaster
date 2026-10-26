@@ -17,6 +17,18 @@ export class SchedulesService {
   constructor(service: QuestService, now: () => number = Date.now) {this.service=service;this.now=now;}
   private get store() {return this.service.store;}
   get(id: string) {const value=this.store.schedule(id);if(!value)throw new AppError('Schedule not found.',404);return value;}
+  initializeModelDefaults() {
+    const defaults=this.service.modelDefaults.get();
+    if(!defaults?.quest.model)return;
+    // Preserve legacy schedules' saved lead, and freeze their team defaults once.
+    this.store.transaction(()=>{
+      for(const schedule of this.store.schedules())if(!schedule.modelDefaults){
+        schedule.modelDefaults={...defaults,quest:{model:schedule.model || defaults.quest.model,reasoning:null}};
+        schedule.model=schedule.modelDefaults.quest.model;
+        this.store.saveSchedule(schedule);
+      }
+    });
+  }
   private blocker(id: string) {
     const quests=this.store.list();
     return quests.find(q=>{
@@ -58,6 +70,15 @@ export class SchedulesService {
       const previous=id?this.get(id):undefined;
       if(previous&&input.revision!==previous.revision)throw new AppError('This schedule changed elsewhere. Reload it before saving.',409);
       const config=this.config(input),now=this.now();
+      const defaults=this.service.modelDefaults.get();
+      if(defaults){
+        config.model ||= defaults.quest.model;
+        if(previous?.modelDefaults && previous.model===config.model)config.modelDefaults=previous.modelDefaults;
+        else {
+          const lead=this.service.modelDefaults.validate({model:config.model,reasoning:config.model===defaults.quest.model ? defaults.quest.reasoning : null});
+          config.modelDefaults={...defaults,quest:lead};
+        }
+      }
       const schedule:QuestSchedule={...config,id:id??randomUUID(),enabled:previous?.enabled??true,revision:(previous?.revision??0)+1,nextAt:nextOccurrence(config.recurrence,now),createdAt:previous?.createdAt??now,updatedAt:now};
       const response={schedule};
       this.store.transaction(()=>{this.store.saveSchedule(schedule);this.store.saveCommand(command.id,command.fingerprint,response);});
@@ -153,7 +174,7 @@ export class SchedulesService {
         workspacePolicy:config.workspacePolicy,model:config.model,tools:config.tools,
         instructions:`This task is a scheduled occurrence. Intended time: ${new Date(occurrence.scheduledAt).toISOString()} (${config.recurrence.timezone}). Actual dispatch: ${new Date(this.now()).toISOString()}. Execute only the saved task. Do not create additional quests, schedules, or expand scope from findings. Report coverage dates, source links, and unavailable sources explicitly. Missing source access does not mean there are no findings. Avoid routine next-step lists and speculative improvements. A later direct user message may authorize further work.`,
         commandId:`occurrence:${occurrence.id}`},'quest',undefined,undefined,{
-          origin:{id:config.id,name:config.name,occurrenceId:occurrence.id,scheduledAt:occurrence.scheduledAt,revision:config.revision},assertActive,
+          modelDefaults:config.modelDefaults,origin:{id:config.id,name:config.name,occurrenceId:occurrence.id,scheduledAt:occurrence.scheduledAt,revision:config.revision},assertActive,
           committed:quest=>{this.store.saveOccurrence({...occurrence,state:'launched',questId:quest.id});},
         });
       // Cached creation is possible after a restart; reconcile without launching twice.
