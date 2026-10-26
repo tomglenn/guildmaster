@@ -29,7 +29,8 @@ export function initializeAppearance() {
     const root = document.documentElement;
     root.dataset.theme = current.theme === 'system' ? dark.matches ? 'dark' : 'light' : current.theme;
     const icon = document.querySelector<HTMLLinkElement>('#app-icon');
-    if (icon) icon.href = root.dataset.theme === 'dark' ? '/gm-avatar-light.png' : '/gm-avatar-dark.png';
+    // Browser chrome does not follow Guildmaster's in-page theme setting.
+    if (icon) icon.href = dark.matches ? '/gm-avatar-light.png' : '/gm-avatar-dark.png';
     root.dataset.textSize = current.textSize;
     root.dataset.reducedMotion = String(current.motion === 'reduced' || reduced.matches);
   };
