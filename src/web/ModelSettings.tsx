@@ -1,3 +1,4 @@
+import ModelPicker from './ModelPicker';
 import React, { useEffect, useState } from 'react';
 import type { ModelDefaults, ModelInfo, ModelSelection, ModelPreference } from '../domain/model-defaults';
 
@@ -17,29 +18,27 @@ export default function ModelSettings({onChanged}:{onChanged:()=>Promise<void>})
     const selection=specialist?draft!.specialists[role as ModelPreference]:draft![role as 'guildmaster'|'quest'|'delegate'];
     const model=view!.models.find(m=>m.id===selection?.model);
     return <div className="model-default-row" key={role}><div><strong>{title}</strong><p>{description}</p></div>
-      <label className="field">Model<select aria-label={`${title} model`} value={selection?.model ?? ''} onChange={e=>update(role,e.target.value?{model:e.target.value,reasoning:selection?.reasoning ?? null}:specialist?undefined:{model:'',reasoning:null})}>
-        <option value="">{specialist?'Use Subagents default':'Choose a model'}</option>
-        {selection?.model&&!model&&<option value={selection.model}>{selection.model} (unavailable)</option>}
-        {view!.models.map(m=><option key={m.id} value={m.id}>{m.name} · {m.provider ?? m.id.split('/')[0]}</option>)}
-      </select></label>
+      <div className="field model-choice"><span>Model</span><ModelPicker models={view!.models} value={selection?.model ?? ''} label={title} variant="settings" disabled={busy} emptyOption={specialist?'Use Subagents default':undefined} note="Choose a model, then save your changes below." onChange={model=>update(role,model?{model,reasoning:selection?.reasoning ?? null}:undefined)}/></div>
       <label className="field">Thinking<select aria-label={`${title} thinking`} disabled={!selection} value={selection?.reasoning ?? ''} onChange={e=>selection&&update(role,{...selection,reasoning:e.target.value||null})}>
         <option value="">{selection?'Provider default':'Use Subagents default'}</option>
         {selection?.reasoning&&!model?.reasoningLevels?.includes(selection.reasoning)&&<option value={selection.reasoning}>{selection.reasoning} (unsupported)</option>}
         {model?.reasoningLevels?.map(level=><option key={level} value={level}>{level[0].toUpperCase()+level.slice(1)}</option>)}
       </select></label></div>;
   };
-  return <section className="settings-section model-settings"><div className="settings-section-title"><div><h2>Models</h2><p>Choose independent defaults for Guildmaster, quest leads, and subagents.</p></div></div>
+  return <section className="settings-section model-settings"><div className="settings-section-title"><div><h2>Models</h2><p>Choose who handles your conversations and delegated work.</p></div></div>
     {error&&<div className="inline-error" role="alert">{error}</div>}
     {!draft||!view?(!error&&<p>Loading model settings…</p>):<form onSubmit={async e=>{e.preventDefault();if(busy)return;setBusy(true);setError('');setSaved(false);try{const result=await request({...draft,commandId:crypto.randomUUID()});setDraft(result.defaults);setView({...view,defaults:result.defaults});await onChanged();setSaved(true);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}}>
+      <p className="model-settings-help">Thinking controls how much reasoning a model uses. Available levels depend on the model.</p>
       <fieldset disabled={busy} className="model-default-fields">
-      {row('guildmaster','Guildmaster','Shared with the existing chat picker. New conversation keeps this choice.')}
-      {row('quest','Quest leads','Used when a new quest starts. Existing quests keep their assigned model.')}
-      {row('delegate','Subagents','Used for new delegated assignments, independently of the lead’s model.')}
-      <details><summary>Use different models for specific work</summary><p>These preferences guide delegation. Project skills still define the workflow and permissions.</p>
+      {row('guildmaster','Guildmaster','The model you chat with. New conversations keep this choice.')}
+      {row('quest','Quest leads','Plans and manages each new quest.')}
+      {row('delegate','Subagents','Handles work delegated by a quest lead.')}
+      <details className="model-specialists"><summary>Models for specific work <span>Optional</span></summary><p>Use the Subagents default, or choose a different model for these assignments.</p>
         {row('coding','Coding','Implementation, debugging, and tests.',true)}
         {row('writing','Writing & output','Documents, reports, and deliverables.',true)}
         {row('review','Adversarial review','Used when an independent agent challenges an implementation, findings, or proposed solution. Ordinary reviews can use the quest lead.',true)}
       </details></fieldset>
+      <p className="model-settings-help">Changes apply to new assignments. Existing quests and subagents keep their models.</p>
       <div className="settings-save-actions"><button className="button" disabled={busy||JSON.stringify(draft)===JSON.stringify(view.defaults)}>{busy?'Saving…':'Save model defaults'}</button>{saved&&<span className="settings-saved" role="status">Saved</span>}</div>
     </form>}
   </section>;

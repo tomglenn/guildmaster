@@ -1015,3 +1015,17 @@ select:not([multiple]),.field select:not([multiple]){appearance:none;-webkit-app
 .model-default-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(150px,.65fr);gap:20px;align-items:start;padding:20px 0;border-bottom:1px solid var(--line)}
 .model-default-row>div{min-width:0}.model-default-row p,.model-default-fields details>p{color:var(--muted);font-size:13px;line-height:1.6;margin-top:6px}.model-default-row .field{margin:0;min-width:0}.model-default-row select{width:100%}.model-default-fields summary{cursor:pointer;padding:20px 0 8px;font-weight:500}
 @media(max-width:700px){.model-default-row{grid-template-columns:minmax(0,1fr);gap:12px}}
+
+/* Settings uses the same searchable picker as the chat composer. */
+.settings-model-trigger{width:100%;max-width:100%;min-width:0;min-height:65px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface-inset);color:var(--text);text-align:left;gap:10px}
+.settings-model-trigger:hover{background:var(--surface-raised);border-color:var(--muted)}
+.settings-model-trigger .model-trigger-label{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px;align-items:flex-start}
+.settings-model-trigger .model-trigger-label>span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+.settings-model-trigger small{color:var(--muted);font-size:12px;font-weight:400}
+.settings-model-trigger>svg{flex-shrink:0}.model-choice>span{display:block}
+.model-default-row .field select{min-height:65px}
+.model-specialists{margin-top:24px;padding:0 20px 16px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.model-specialists summary{display:list-item}.model-specialists summary>span{margin-left:10px;font-size:12px;color:var(--muted);font-weight:400}
+.model-specialists .model-default-row:last-child{border-bottom:0;padding-bottom:0}
+.model-settings .model-settings-help{font-size:13px;color:var(--muted);margin:16px 0}
+@media(max-width:700px){.model-specialists{padding-inline:14px}.settings-model-trigger,.model-default-row .field select{min-height:48px}}
