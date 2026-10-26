@@ -90,7 +90,7 @@ test('HTTP model settings and picker share one revision; agents cannot write set
  t.after(async()=>{await app.close();await rm(dataDir,{recursive:true,force:true});});
  const request=async(path:string,body?:unknown,auth=token)=>{const r=await fetch(url+path,{headers:{authorization:`Bearer ${auth}`,'content-type':'application/json'},...(body?{method:'POST',body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json()};};
  const initial=(await request('/api/settings/models')).data;
- assert.equal(initial.defaults.guildmaster.model,'fixture/gm');
+ assert.equal(initial.defaults.guildmaster.model,'');
  assert.equal((await request('/api/guildmaster/model',{model:'fixture/other',revision:1,commandId:'picker'})).status,200);
  assert.equal((await request('/api/bootstrap')).data.defaultModel,'fixture/other');
  assert.equal((await request('/api/settings/models')).data.defaults.guildmaster.model,'fixture/other');
@@ -114,4 +114,29 @@ test('legacy schedules retain their saved model when defaults are introduced',as
  await schedules.action(schedule.id,'run',{revision:schedule.revision,commandId:'run-legacy'});
  for(let i=0;i<100&&!store.list().some(q=>q.schedule?.id===schedule.id);i++)await new Promise(r=>setTimeout(r,10));
  assert.equal(store.list().find(q=>q.schedule?.id===schedule.id)?.model,'fixture/other');
+});
+
+test('first use waits for a chosen model, initializes all roles once, and survives provider changes and restart',async t=>{
+ const dataDir=await mkdtemp(join(tmpdir(),'gm-first-use-'));
+ const available:ModelInfo[]=[];
+ let app=createApp({dataDir,port:0,models:available});let address=await app.listen();
+ t.after(async()=>{await app.close();await rm(dataDir,{recursive:true,force:true});});
+ const request=async(path:string,body?:unknown)=>{const r=await fetch(address.url+path,{headers:{authorization:`Bearer ${address.token}`,'content-type':'application/json'},...(body?{method:'POST',body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json()};};
+ let view=(await request('/api/settings/models')).data;
+ assert.equal(view.models.length,0);assert.equal(view.defaults.guildmaster.model,'');
+ // A provider connecting must not silently select its alphabetically first model.
+ available.push(...models);
+ view=(await request('/api/settings/models')).data;
+ assert.equal(view.defaults.guildmaster.model,'');assert.equal(view.defaults.quest.model,'');
+ const selected=choice('other');
+ const saved=await request('/api/settings/models',{...view.defaults,guildmaster:selected,quest:selected,delegate:selected,commandId:'first-choice'});
+ assert.equal(saved.status,200);
+ await request('/api/guildmaster/model',{model:'fixture/gm',revision:saved.data.defaults.revision,commandId:'later-gm-choice'});
+ const before=(await request('/api/settings/models')).data.defaults;
+ assert.deepEqual(before.quest,selected);assert.deepEqual(before.delegate,selected);
+ assert.deepEqual(before.specialists,{});
+ available.unshift({id:'another/first',name:'New provider model'});
+ assert.deepEqual((await request('/api/settings/models')).data.defaults,before);
+ await app.close();app=createApp({dataDir,port:0,models:available});address=await app.listen();
+ assert.deepEqual((await request('/api/settings/models')).data.defaults,before);
 });

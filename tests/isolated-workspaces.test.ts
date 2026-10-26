@@ -188,7 +188,7 @@ test('native lead and delegate run copied skills and resolve delegate questions 
   const app=createApp({dataDir,port:0,defaultWorkspace:f.repo,workerPath:worker});
   // Close the second service before the fixture removes its directories.
   try {
-    await app.listen();
+    await app.listen();app.service.modelDefaults.initialize('local-fixture/fixture');
     const project=(await app.service.saveProject({name:'Example',repositories:[{name:'App',path:f.repo}],commandId:'project'})).project;
     const {quest}=await app.service.create({objective:'Inspect the exact commit using separate workspaces.',workspacePolicy:'isolated',projectId:project.id,model:'local-fixture/fixture',tools:['read','bash'],commandId:'quest'});
     for(let n=0;n<800;n++){

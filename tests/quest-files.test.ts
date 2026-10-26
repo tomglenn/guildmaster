@@ -9,7 +9,7 @@ import { createApp } from '../src/service/server.ts';
 
 test('quest file links serve existing workspace reports with authentication, containment and sandboxing',async t=>{
  const dataDir=await mkdtemp(join(tmpdir(),'guildmaster-files-'));
- const app=createApp({dataDir,port:4173,models:[{id:'fixture/model',name:'Fixture'}],defaultWorkspace:dataDir});app.service.schedule=()=>{};
+ const app=createApp({dataDir,port:4173,models:[{id:'fixture/model',name:'Fixture'}],defaultWorkspace:dataDir});app.service.schedule=()=>{};app.service.modelDefaults.initialize('fixture/model');
  t.after(async()=>{await app.close();await rm(dataDir,{recursive:true,force:true});});
  const request=(url:string,headers:Record<string,string>={},method='GET')=>new Promise<{status:number;text:string;headers:Record<string,string>}>(resolve=>{
   const req=Readable.from([]) as any;req.url=url;req.method=method;req.headers={host:'127.0.0.1:4173',...headers};

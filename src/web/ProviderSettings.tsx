@@ -19,7 +19,7 @@ async function request<T>(path: string, body?: unknown, method = 'POST'): Promis
 }
 const safeUrl = (value?: string) => value && /^https?:\/\//i.test(value) ? value : undefined;
 
-export default function ProviderSettings({ onChanged }: { onChanged: (model?: string) => Promise<void> }) {
+export default function ProviderSettings({ onChanged, onStarted }: { onChanged: (model?: string) => Promise<void>; onStarted:()=>void }) {
   const [tab, setTab] = useStoredTab('guildmaster:settings-tab', ['providers', 'models', 'connections', 'images', 'appearance', 'storage'], 'providers');
   const [connecting, setConnecting] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -38,6 +38,7 @@ export default function ProviderSettings({ onChanged }: { onChanged: (model?: st
   const refresh = useCallback(async () => {
     const next = await request<Configuration>('');
     setConfig(next);
+    if(next.models.length){const {defaults}=await request<{defaults:{guildmaster:{model:string}}}>('/models');if(!defaults.guildmaster.model)setTab('models');}
     setSelected(previous => previous || next.providers.find(p => !p.configured)?.id || next.providers[0]?.id || '');
     return next;
   }, []);
@@ -91,7 +92,7 @@ export default function ProviderSettings({ onChanged }: { onChanged: (model?: st
       <button className={tab === 'storage' ? 'selected' : ''} aria-pressed={tab === 'storage'} onClick={() => setTab('storage')}><Icon name="archive" size={15}/>Storage</button>
     </div>
     </div>
-    {tab === 'models' && <ModelSettings onChanged={() => onChanged()}/>}
+    {tab === 'models' && <ModelSettings onChanged={() => onChanged()} onConnect={()=>{setTab('providers');openConnection();}} onStarted={onStarted}/>}
     {tab === 'storage' && <StorageSettings onChanged={() => onChanged()}/>}
     {tab === 'connections' && <ConnectionsSettings/>}
     {tab === 'images' && <ImageGenerationSettings/>}

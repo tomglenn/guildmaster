@@ -12,7 +12,7 @@ import type { Quest } from '../src/domain/types.ts';
 async function fixture(t: any) {
   const dataDir = await mkdtemp(join(tmpdir(), 'guildmaster-conversation-'));
   const options = { dataDir, port:4173, models:[{id:'fake/test',name:'Fixture'}],workerPath:fileURLToPath(new URL('./fixtures/worker.ts',import.meta.url)) };
-  let app = createApp(options);
+  let app = createApp(options);app.service.modelDefaults.initialize('fake/test');
   t.after(async () => { await app.close(); await rm(dataDir,{recursive:true,force:true}); });
   const request = (path: string, body?: unknown, headers: Record<string,string> = {}) => new Promise<{status:number;data:any;headers:Record<string,string>}>(resolve => {
     const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]) as any;

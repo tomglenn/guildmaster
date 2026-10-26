@@ -46,7 +46,7 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
   async function loadModelDefaults() {
     const available=await models();
     service.modelDefaults.catalog=options.workerPath && !available.models.length ? undefined : available.models;
-    const defaults=service.modelDefaults.initialize((await settings.getDefaultModel()) || available.models[0]?.id || '');
+    const defaults=service.modelDefaults.initialize((await settings.getDefaultModel()) || '');
     schedules.initializeModelDefaults();
     return defaults;
   }

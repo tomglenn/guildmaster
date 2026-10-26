@@ -7,7 +7,8 @@ async function request(body?: unknown):Promise<View> {
   const response=await fetch('/api/settings/models',body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await response.json();if(!response.ok)throw new Error(data.error || 'Could not save model settings.');return data;
 }
-export default function ModelSettings({onChanged}:{onChanged:()=>Promise<void>}) {
+export default function ModelSettings({onChanged,onConnect,onStarted}:{onChanged:()=>Promise<void>;onConnect:()=>void;onStarted?:()=>void}) {
+  const [startingModel,setStartingModel]=useState('');
   const [view,setView]=useState<View>();const [draft,setDraft]=useState<ModelDefaults>();
   const [error,setError]=useState(''),[busy,setBusy]=useState(false),[saved,setSaved]=useState(false);
   useEffect(()=>{let alive=true;void request().then(v=>{if(alive){setView(v);setDraft(v.defaults);}}).catch(e=>{if(alive)setError(e.message)});return()=>{alive=false;};},[]);
@@ -25,6 +26,14 @@ export default function ModelSettings({onChanged}:{onChanged:()=>Promise<void>})
         {model?.reasoningLevels?.map(level=><option key={level} value={level}>{level[0].toUpperCase()+level.slice(1)}</option>)}
       </select></label></div>;
   };
+  const needsSetup=draft && !draft.guildmaster.model && !draft.quest.model && !draft.delegate.model;
+  if(view && draft && !view.models.length)return <section className="settings-section model-setup"><h2>Connect a provider</h2><p>Use your account or an API key to get started.</p>{error&&<div className="inline-error" role="alert">{error}</div>}<button type="button" className="button primary" onClick={onConnect}>Connect a provider</button></section>;
+  if(view && draft && needsSetup)return <section className="settings-section model-setup"><h2>Choose your starting model</h2><p>Start with one model for Guildmaster and its agents. Customize later in Settings.</p>
+    {error&&<div className="inline-error" role="alert">{error}</div>}
+    <form onSubmit={async event=>{event.preventDefault();if(busy||!startingModel)return;setBusy(true);setError('');try{const selection={model:startingModel,reasoning:null};const result=await request({...draft,guildmaster:selection,quest:selection,delegate:selection,specialists:{},commandId:crypto.randomUUID()});setDraft(result.defaults);setView({...view,defaults:result.defaults});await onChanged();onStarted?.();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}}>
+      <ModelPicker models={view.models} value={startingModel} label="Starting" variant="settings" disabled={busy} onChange={setStartingModel} note="Choose the model you want to start with."/>
+      <button className="button primary" disabled={busy||!startingModel}>{busy?'Saving…':'Start chatting'}</button>
+    </form></section>;
   return <section className="settings-section model-settings"><div className="settings-section-title"><div><h2>Models</h2><p>Choose who handles your conversations and delegated work.</p></div></div>
     {error&&<div className="inline-error" role="alert">{error}</div>}
     {!draft||!view?(!error&&<p>Loading model settings…</p>):<form onSubmit={async e=>{e.preventDefault();if(busy)return;setBusy(true);setError('');setSaved(false);try{const result=await request({...draft,commandId:crypto.randomUUID()});setDraft(result.defaults);setView({...view,defaults:result.defaults});await onChanged();setSaved(true);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}}>

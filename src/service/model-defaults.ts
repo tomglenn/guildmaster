@@ -49,7 +49,8 @@ export class ModelDefaultsStore {
     if (input.migrate && previous.guildmasterSelected) return previous;
     if (input.revision!==previous.revision) throw new AppError('The model choice changed elsewhere. Refresh and try again.',409);
     const selection=this.validate({model:input.model,reasoning:input.reasoning===undefined ? previous.guildmaster.reasoning : input.reasoning});
-    const next={...previous,revision:previous.revision+1,guildmaster:selection,guildmasterSelected:true};
+    const firstChoice=[previous.guildmaster,previous.quest,previous.delegate].every(value=>!value.model);
+    const next={...previous,...(firstChoice?{quest:{...selection},delegate:{...selection}}:{}),revision:previous.revision+1,guildmaster:selection,guildmasterSelected:true};
     this.store.saveSetting(MODEL_DEFAULTS_KEY,next);return next;
   }
 }

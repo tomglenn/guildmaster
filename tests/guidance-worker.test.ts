@@ -31,7 +31,7 @@ for (const specialist of [false,true]) test(specialist ? 'Explicit adversarial r
   await put(workerPath,`process.env.GUILDMASTER_TEST_SPECIALIST=${JSON.stringify(specialist?'1':'')};\nprocess.env.GUILDMASTER_TEST_REQUESTS=${JSON.stringify(trace)};\nprocess.env.GUILDMASTER_TEST_REPO=${JSON.stringify(repo)};\nawait import(${JSON.stringify(pathToFileURL(resolve('tests/fixtures/guidance-fetch.mjs')).href)});\nawait import(${JSON.stringify(pathToFileURL(resolve('src/worker.ts')).href)});\n`);
   const app = createApp({dataDir,port:0,workerPath,defaultWorkspace:repo});
   t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});
-  const {url,token}=await app.listen();
+  const {url,token}=await app.listen();app.service.modelDefaults.initialize('local-fixture/fixture');
   {const defaults=app.service.modelDefaults.get()!;await app.service.saveModelDefaults({...defaults,specialists:{review:{model:'review-provider/reviewer',reasoning:null}},commandId:'review-model'});}
   const project = (await app.service.saveProject({name:'Example',repositories:[{name:'Review app',path:repo}],commandId:'project'})).project;
   const resolved = await fetch(`${url}/api/projects/resolve?repositoryUrl=${encodeURIComponent('https://github.com/example/review-app/pull/7')}`,{headers:{Authorization:`Bearer ${token}`}}).then(response=>response.json());

@@ -11,7 +11,7 @@ import type { WorkerSpec } from '../src/engine/protocol.ts';
 
 test('schedule HTTP management is user-only, drafts are Guildmaster-only, and deletion retains quests',async t=>{
  const dataDir=await mkdtemp(join(tmpdir(),'guildmaster-schedules-http-'));
- const app=createApp({dataDir,port:4173,models:[{id:'fixture/model',name:'Fixture'}],defaultWorkspace:dataDir});app.service.schedule=()=>{};
+ const app=createApp({dataDir,port:4173,models:[{id:'fixture/model',name:'Fixture'}],defaultWorkspace:dataDir});app.service.schedule=()=>{};app.service.modelDefaults.initialize('fixture/model');
  t.after(async()=>{await app.close();await rm(dataDir,{recursive:true,force:true});});
  const request=(path:string,body?:unknown,headers:Record<string,string>={})=>new Promise<{status:number;data:any;headers:Record<string,string>}>(resolve=>{
    const req=Readable.from(body===undefined?[]:[Buffer.from(JSON.stringify(body))]) as any;

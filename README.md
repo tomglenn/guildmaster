@@ -29,7 +29,7 @@ npm start
 Guildmaster builds the interface on its first start and opens [127.0.0.1:4173](http://127.0.0.1:4173).
 
 1. Open **Settings** and connect a model provider.
-2. Open **Settings → Models** and choose your model defaults.
+2. Choose one starting model, then select **Start chatting**. You can customize agent models later in **Settings → Models**.
 3. For code tasks, add your local repositories in **Projects**, or ask Guildmaster to register them.
 4. Tell Guildmaster what you want to do.
 
