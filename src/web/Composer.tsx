@@ -1,3 +1,4 @@
+import { ComposerFire } from './Halloween';
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 import ImagePreview from './ImagePreview';
@@ -101,7 +102,7 @@ export default function Composer({ draftKey, onSend, disabled, placeholder, foot
         if (stopping) return;
         setStopping(true); setError('');
         try { await onStop(); } catch (cause) { setError((cause as Error).message); } finally { setStopping(false); }
-      }}>{stopping ? <span className="spinner"/> : <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>}</button> : <button className="send-button" type="submit" disabled={!ready || disabled || sending || readingImages || (!text.trim() && !images.length)} aria-label={answerLabel ? 'Send answer' : 'Send message'} title={disabled ? 'Sending is currently unavailable' : answerLabel ? 'Send answer (Enter)' : 'Send message (Enter)'}>{sending || readingImages ? <span className="spinner"/> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>}</button>}
+      }}>{stopping ? <span className="spinner"/> : <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>}</button> : <button className="send-button" type="submit" disabled={!ready || disabled || sending || readingImages || (!text.trim() && !images.length)} aria-label={answerLabel ? 'Send answer' : 'Send message'} title={disabled ? 'Sending is currently unavailable' : answerLabel ? 'Send answer (Enter)' : 'Send message (Enter)'}><ComposerFire/>{sending || readingImages ? <span className="spinner"/> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>}</button>}
     </form>
     {preview && <ImagePreview src={`data:${preview.mimeType};base64,${preview.data}`} name={preview.name} onClose={() => setPreviewId(undefined)}/>}
     {error && <div className="inline-error composer-error" role="alert"><span>{error}</span><button type="button" className="icon-button" aria-label="Dismiss message error" title="Dismiss" onClick={() => { setError(''); input.current?.focus({ preventScroll: true }); }}><Icon name="close" size={16}/></button></div>}

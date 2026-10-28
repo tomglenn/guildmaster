@@ -1,0 +1,80 @@
+/* The Midnight Guild. All decoration is opt-in and leaves controls unobstructed. */
+:root[data-theme="halloween"]{color-scheme:dark;--canvas:#17121e;--surface:#211a2b;--surface-raised:#2d2238;--surface-inset:#191320;--sidebar:#120f19;--user-surface:#302335;--text:#f4e9d9;--secondary:#d4c3d9;--muted:#b3a0ba;--line:#49344f;--primary:#eea155;--primary-hover:#ffc17d;--on-primary:#241322;--accent:#ffc17d;--success:#b4d39a;--warning:#f2ba72;--danger:#f1a1ad;--info:#c5aff5;--code-surface:#ffffff09;--code-text:#e3c6f4;--display:Georgia,'Times New Roman',serif}
+.halloween-atmosphere,.halloween-sidebar,.halloween-welcome{display:none}
+:root[data-theme="halloween"] .halloween-atmosphere{display:block;position:fixed;inset:0;z-index:30;pointer-events:none;overflow:hidden}
+.haunt-web{position:absolute;right:0;top:0;width:150px;height:150px;color:#b899bd;opacity:.25}
+.haunt-embers{position:absolute;inset:0;overflow:hidden}
+.haunt-embers i{position:absolute;bottom:-10px;width:3px;height:3px;background:#f7b564;border-radius:50%;box-shadow:0 0 9px #ee9a57;opacity:0;animation:haunt-rise 22s linear infinite}
+:root[data-theme="halloween"] .main{background:radial-gradient(ellipse at 75% 0,#53324a33,transparent 60%),var(--canvas)}
+:root[data-theme="halloween"] .sidebar{position:relative;isolation:isolate;background:radial-gradient(ellipse at bottom,#4b274033,transparent 70%),var(--sidebar);border-right:1px solid #67445b66}
+:root[data-theme="halloween"] .brand{position:relative}
+:root[data-theme="halloween"] .brand::after{content:'ALL HALLOWS’ EVE';font-family:inherit;font-size:10px;letter-spacing:1.6px;color:var(--accent);margin-left:auto;max-width:92px;line-height:1.7}
+:root[data-theme="halloween"] .brand-logo{filter:sepia(.6) saturate(2) drop-shadow(0 0 12px #f4ac5455)}
+:root[data-theme="halloween"] .halloween-sidebar{display:block;position:absolute;inset:auto 8px 48px;z-index:-1;opacity:.28;pointer-events:none}
+.halloween-sidebar svg{width:100%;max-width:245px;height:auto}
+.halloween-sidebar>span,.halloween-welcome>span{color:var(--accent);font-size:10px;letter-spacing:2.6px}
+.halloween-sidebar>small{font-family:Georgia,serif;font-style:italic;color:var(--muted);font-size:12px;margin-top:8px}
+:root[data-theme="halloween"] .halloween-welcome{display:block;width:270px;max-width:100%;margin-top:-20px}
+.halloween-welcome svg{display:block;width:100%;height:auto;margin-bottom:12px}
+:root[data-theme="halloween"] .welcome h2{font-size:34px;color:#ffe2b7;text-shadow:0 2px 24px #e5904b22}
+:root[data-theme="halloween"] :is(.page-heading h1,.gm-heading h1,.quest-title-row h1){letter-spacing:.3px;color:#ffe2b7}
+:root[data-theme="halloween"] .gm-heading{border-bottom:1px solid #69465866;background:linear-gradient(100deg,#58344a22,transparent)}
+:root[data-theme="halloween"] .nav-item.active{background:linear-gradient(100deg,#aa60372b,#9163ad17);color:#ffdbad}
+:root[data-theme="halloween"] .quest-card{background:linear-gradient(135deg,#35243866,transparent 65%),var(--surface);border-radius:14px 4px 14px 4px;box-shadow:inset 0 1px #b4836333,0 7px 20px #0002}
+:root[data-theme="halloween"] .quest-card:hover{border-color:#b18269;box-shadow:0 0 22px #da84361a}
+:root[data-theme="halloween"] .quest-monogram{border:1px solid color-mix(in srgb,var(--quest-accent) 30%,transparent);border-radius:50%;box-shadow:0 0 18px #e7ac4910}
+:root[data-theme="halloween"] .composer-wrap:not(.composer-unavailable) .composer{background:linear-gradient(125deg,#392637,#251d30);border:1px solid #7b5265;box-shadow:0 0 30px #dc80400b,inset 0 1px #e7ac4922;border-radius:14px}
+:root[data-theme="halloween"] .composer-wrap:not(.composer-unavailable) .composer:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px #ffc17d20,0 0 32px #ed9d4610}
+:root[data-theme="halloween"] :is(.send-button,.button.primary){background:linear-gradient(135deg,#ffd295,#e49750);box-shadow:0 2px 12px #e9994020}
+:root[data-theme="halloween"] .welcome-suggestions button{border-color:#61435e;background:linear-gradient(120deg,#35233888,#211a2b);border-radius:12px 3px 12px 3px}
+:root[data-theme="halloween"] .welcome-suggestions button:hover{border-color:var(--accent);box-shadow:0 0 18px #ffbc6a15}
+:root[data-theme="halloween"] .empty-emblem{border:1px solid #996f4a66;border-radius:50%;background:radial-gradient(circle,#f0ae5222,transparent);box-shadow:0 0 32px #df934319}
+.haunt-ghost{animation:haunt-float 5s ease-in-out infinite}
+.haunt-bats{transform-origin:220px 40px;animation:haunt-float 7s ease-in-out infinite reverse}
+.haunt-windows,.haunt-pumpkin-face{animation:haunt-glow 4s ease-in-out infinite alternate}
+.haunt-moon-halo{animation:haunt-glow 7s ease-in-out infinite alternate}
+.haunt-spider{animation:haunt-float 9s ease-in-out infinite}
+.theme-options{grid-template-columns:repeat(4,minmax(0,1fr));max-width:720px}
+.theme-mini[data-tone="halloween"]{background:radial-gradient(circle at 78% 29%,#edc492 0 9%,transparent 10%),#211729}
+.theme-mini[data-tone="halloween"] .theme-mini-sidebar{background:#100d17;border-right:1px solid #7a4b57}
+.theme-mini[data-tone="halloween"] i{background:#b67b52;width:65%}
+.theme-mini[data-tone="halloween"] i:last-child{background:#a18bbb;width:40%}
+.halloween-description{font-size:13px;color:var(--muted);line-height:1.7;margin-top:16px;max-width:560px}
+@keyframes haunt-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes haunt-glow{from{opacity:.65}to{opacity:1}}
+@keyframes haunt-rise{0%{transform:translate(0,0);opacity:0}15%{opacity:.4}80%{opacity:.25}100%{transform:translate(35px,-90vh);opacity:0}}
+@media(max-height:740px){.halloween-sidebar svg{max-width:160px}.halloween-sidebar>small{display:none}}
+@media(max-height:580px){:root[data-theme="halloween"] .halloween-sidebar{display:none}}
+@media(max-width:700px){.theme-options{grid-template-columns:repeat(2,minmax(0,1fr));max-width:480px}.haunt-web{width:85px;height:85px}:root[data-theme="halloween"] .halloween-sidebar{display:none}:root[data-theme="halloween"] .welcome h2{font-size:28px}:root[data-theme="halloween"] .halloween-welcome{width:200px;margin-top:0}}
+@media(prefers-reduced-motion:reduce){.halloween-atmosphere *,.halloween-sidebar *,.halloween-welcome *{animation:none!important}.haunt-embers{display:none}}
+:root[data-reduced-motion="true"] .haunt-embers{display:none}
+/* The flame and button share one silhouette; the arrow stays above the glow. */
+.composer-fire{display:none}
+:root[data-theme="halloween"] .composer-wrap:not(.composer-unavailable) .composer{overflow:visible}
+/* Reserve paint space inside the scrolling composer without increasing its footprint. */
+:root[data-theme="halloween"] :is(.gm-composer,.quest-composer){position:relative;padding-top:40px;margin-top:-28px}
+:root[data-theme="halloween"] .send-button{position:relative;isolation:isolate}
+:root[data-theme="halloween"] .send-button:not(:disabled):not(.stop-button){background:transparent;box-shadow:none;color:#573014}
+:root[data-theme="halloween"] .send-button:not(:disabled) .composer-fire{display:block;position:absolute;width:36px;height:76px;bottom:0;left:0;pointer-events:none;z-index:-1;filter:drop-shadow(0 0 5px #ffad5666) drop-shadow(0 0 15px #f7893322)}
+.composer-fire svg{display:block;width:100%;height:100%;overflow:visible;transform-origin:center bottom;animation:haunt-flame 1.9s ease-in-out infinite alternate}
+.composer-fire .fire-core{animation:haunt-flame-heart 1.3s ease-in-out infinite alternate}
+:root[data-theme="halloween"] .send-button:hover .composer-fire{filter:drop-shadow(0 0 7px #ffb95b88) drop-shadow(0 0 18px #f7893344)}
+.haunt-flight{position:absolute;inset:0;overflow:hidden}
+.haunt-flying-bat{position:absolute;left:-110px;color:#171020;filter:drop-shadow(0 1px 1px #cf9ca677);animation:haunt-flight 3s linear both;will-change:transform}
+.haunt-flying-bat svg{display:block;width:100%;overflow:visible;animation:haunt-bat-bob var(--wing-speed) ease-in-out var(--wing-phase) infinite}
+.bat-wing{transform-box:view-box;animation-duration:var(--wing-speed);animation-delay:var(--wing-phase);animation-timing-function:cubic-bezier(.45,0,.55,1);animation-iteration-count:infinite}
+.bat-wing-left{transform-origin:38px 26px;animation-name:haunt-wing-left}
+.bat-wing-right{transform-origin:42px 26px;animation-name:haunt-wing-right}
+@keyframes haunt-flame{0%{transform:skewX(-1.5deg) scaleY(.97)}55%{transform:skewX(1deg) scaleY(1.025)}100%{transform:skewX(-.5deg) scaleY(1)}}
+@keyframes haunt-flame-heart{from{opacity:.7}to{opacity:1}}
+@keyframes haunt-flight{0%{transform:translate(-30px,0) rotate(-8deg);opacity:0}8%{opacity:var(--bat-opacity)}30%{transform:translate(calc(30vw + 60px),var(--bat-drift)) rotate(var(--bat-bank))}65%{transform:translate(calc(65vw + 110px),var(--bat-rise)) rotate(-5deg)}92%{opacity:var(--bat-opacity)}100%{transform:translate(calc(100vw + 240px),var(--bat-drift)) rotate(8deg);opacity:0}}
+/* Each wing hinges at the shoulder: wide upstroke, fast folded downstroke. */
+@keyframes haunt-wing-left{0%,100%{transform:rotate(18deg) scale(1,.95)}45%{transform:rotate(-36deg) scale(.32,.6)}65%{transform:rotate(-15deg) scale(.6,.8)}}
+@keyframes haunt-wing-right{0%,100%{transform:rotate(-18deg) scale(1,.95)}45%{transform:rotate(36deg) scale(.32,.6)}65%{transform:rotate(15deg) scale(.6,.8)}}
+@keyframes haunt-bat-bob{0%,100%{transform:translateY(-2px)}50%{transform:translateY(2px)}}
+@media(prefers-reduced-motion:reduce){.composer-fire,.haunt-flight{display:none!important}}
+:root[data-reduced-motion="true"] :is(.composer-fire,.haunt-flight){display:none!important}
+
+/* Keep a conventional readable button when flame motion is disabled. */
+@media(prefers-reduced-motion:reduce){:root[data-theme="halloween"] .send-button:not(:disabled):not(.stop-button){background:linear-gradient(135deg,#ffd295,#e49750)}}
+:root[data-theme="halloween"][data-reduced-motion="true"] .send-button:not(:disabled):not(.stop-button){background:linear-gradient(135deg,#ffd295,#e49750)}

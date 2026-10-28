@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { initializeAppearance } from './appearance';
 import './styles.css';
+import './halloween.css';
 
 initializeAppearance();
 

@@ -1,5 +1,5 @@
 export type Appearance = {
-  theme: 'system' | 'light' | 'dark';
+  theme: 'system' | 'light' | 'dark' | 'halloween';
   textSize: 'default' | 'large' | 'larger';
   motion: 'system' | 'reduced';
 };
@@ -9,7 +9,7 @@ function read(): Appearance {
   try {
     const value = JSON.parse(localStorage.getItem(key) || '{}');
     return {
-      theme: ['system', 'light', 'dark'].includes(value?.theme) ? value.theme : defaults.theme,
+      theme: ['system', 'light', 'dark', 'halloween'].includes(value?.theme) ? value.theme : defaults.theme,
       textSize: ['default', 'large', 'larger'].includes(value?.textSize) ? value.textSize : defaults.textSize,
       motion: ['system', 'reduced'].includes(value?.motion) ? value.motion : defaults.motion,
     };
