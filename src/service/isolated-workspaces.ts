@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, readFile, writeFile, readdir, lstat, copyFile, chmod, rm, realpath } from 'node:fs/promises';
 import { join, dirname, relative, resolve } from 'node:path';
@@ -8,6 +8,31 @@ import { within, scopeGuidance, type GuidanceManifest } from '../engine/guidance
 import { directory, requireWorktreeSource } from './projects.ts';
 
 const exec = promisify(execFile);
+
+/** Stream modes only: repository size must not impose an output-buffer limit. */
+export async function containsSubmodules(source: string, commit: string): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', ['ls-tree', '-r', '--format=%(objectmode)', commit], {
+      cwd: source, timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let found = false;
+    let tail = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      const modes = tail + chunk;
+      found ||= modes.includes('160000');
+      tail = modes.slice(-5);
+    });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk: string) => { stderr = (stderr + chunk).slice(-64000); });
+    child.on('error', reject);
+    child.on('close', (code, signal) => {
+      if (code === 0) resolve(found);
+      else reject(new AppError(`Could not inspect repository submodules (${signal ?? code}): ${stderr.trim()}`));
+    });
+  });
+}
 const gitQueues = new Map<string, Promise<unknown>>();
 export async function gitMutation<T>(source: string, operation: () => Promise<T>): Promise<T> {
   const {stdout} = await exec('git', ['rev-parse', '--git-common-dir'], {cwd:source});
@@ -72,8 +97,7 @@ export async function prepareIsolatedWorkspaces(options: {
       await requireWorktreeSource(source);
       const {stdout} = await exec('git',['rev-parse','--verify',`${request.commit}^{commit}`],{cwd:source,timeout:10000});
       if (stdout.trim() !== request.commit) throw new AppError('The requested object is not the exact commit.');
-      const modules = await exec('git',['ls-tree','-r',request.commit],{cwd:source,timeout:10000,maxBuffer:8_000_000});
-      if (modules.stdout.split('\n').some(line=>line.startsWith('160000 '))) throw new AppError('This commit contains submodules. Use the existing workspace until isolated submodule setup is supported.');
+      if (await containsSubmodules(source, request.commit)) throw new AppError('This commit contains submodules. Use the existing workspace until isolated submodule setup is supported.');
       const index = String(workspaces.indexOf(workspace));
       const path = join(folder,index,'repo');
       await mkdir(dirname(path),{recursive:true});
