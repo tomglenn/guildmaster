@@ -9,15 +9,15 @@ const call = (name: string, args: any = {}, signal?: AbortSignal, id = 'call-one
 const args = { prompt: 'Compact concept', authorization: 'Include mockup images illustrating the concepts.' };
 
 test('image tools are available to all worker roles only with a dedicated capability and local service URL', () => {
-  for (const role of ['guildmaster', 'quest', 'delegate'] as const) assert.deepEqual(imageTools({ ...spec, role }).map(tool => tool.name), ['generate_image', 'list_generated_images']);
+  for (const role of ['guildmaster', 'quest', 'delegate'] as const) assert.deepEqual(imageTools({ ...spec, role }).map(tool => tool.name), ['list_conversation_images', 'generate_image', 'list_generated_images']);
   assert.deepEqual(imageTools({ ...spec, imageToken: undefined }), []);
   assert.deepEqual(imageTools({ ...spec, serviceUrl: undefined }), []);
   for (const serviceUrl of ['https://127.0.0.1', 'http://remote.invalid', 'http://127.0.0.1.evil.invalid', 'http://user:secret@localhost', 'file:///tmp/service']) assert.throws(() => imageTools({ ...spec, serviceUrl }), /local HTTP/);
-  assert.equal(imageTools({ ...spec, serviceUrl: 'http://[::1]:41999' }).length, 2);
+  assert.equal(imageTools({ ...spec, serviceUrl: 'http://[::1]:41999' }).length, 3);
 });
 
 test('schemas and focused guidance require authorization and bound output counts', () => {
-  const tool = imageTools(spec)[0];
+  const tool = imageTools(spec).find(tool => tool.name === 'generate_image')!;
   const schema = tool.parameters as any;
   assert.deepEqual(schema.required, ['prompt', 'authorization']);
   assert.equal(schema.properties.count.minimum, 1);

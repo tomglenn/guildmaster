@@ -49,6 +49,7 @@ export interface ToolCall {
 export interface Activity { id: number; questId: string; type: string; detail: string; createdAt: number }
 export interface Request { id: string; questId: string; runId: string; toolCallId?: string; question: string; status: 'pending' | 'answered' | 'dismissed'; answer?: string; answerMessageId?: string; createdAt: number }
 export interface CreateQuest {
+  imageIds?: string[];
   images?: import('./images.ts').ImageUpload[];
   workspacePolicy?: WorkspacePolicy; revisions?: IsolationRequest[];
   title?: string; objective: string; workspaceMode?: WorkspaceMode; workspacePath?: string;

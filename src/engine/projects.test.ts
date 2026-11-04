@@ -159,3 +159,21 @@ test('a new worker refuses isolated creation against an older service before any
   await assert.rejects(create.execute('isolated',{title:'Review',objective:'Inspect committed source',projectId:'alpha',workspacePolicy:'isolated'},undefined,undefined,{} as any),/No quest was created/);
   assert.deepEqual(calls,['GET /api/health']);
 });
+
+test('quest handoff tools forward explicit image selections including an empty selection',async t=>{
+  const sent:any[]=[];
+  t.mock.method(globalThis,'fetch',async(_url:URL,init:RequestInit)=>{
+    sent.push(JSON.parse(String(init.body)));
+    return Response.json({quest:{id:'quest'}});
+  });
+  const tools=guildmasterTools(spec);
+  for(const name of ['create_quest','continue_quest']) {
+    const tool=tools.find(tool=>tool.name===name)!;
+    assert.ok((tool.parameters as any).properties.imageIds);
+    assert.match(tool.description,/Images are never attached automatically/);
+    for(const imageIds of [['older-image','second-image'],[]]) {
+      await tool.execute('handoff',{title:'Fix',objective:'Fix the discussed UI',questId:'quest',message:'Use the discussed screenshot',imageIds},undefined,undefined,{} as any);
+      assert.deepEqual(sent.at(-1).imageIds,imageIds);
+    }
+  }
+});

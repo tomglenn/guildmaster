@@ -60,3 +60,20 @@ test('only a successful pending wait requests a worker yield; failures remain vi
   assert.deepEqual(delegationTools({...spec,role:'guildmaster'},()=>{}),[]);
   assert.throws(()=>delegationTools({...spec,serviceUrl:'https://remote.invalid'},()=>{}),/local HTTP/);
 });
+
+test('delegate and follow-up tools preserve explicit image selections',async t=>{
+  const sent:any[]=[];
+  t.mock.method(globalThis,'fetch',async(_url:URL,init:RequestInit)=>{
+    if(init.method==='GET')return Response.json({capabilities:{followupQuests:true}});
+    sent.push(JSON.parse(String(init.body)));
+    return Response.json({agent:{id:'agent'},quest:{id:'quest'}});
+  });
+  const tools=delegationTools(spec,()=>{});
+  for(const name of ['delegate_task','continue_agent','create_followup_quest']) {
+    const tool=tools.find(tool=>tool.name===name)!;
+    assert.ok((tool.parameters as any).properties.imageIds);
+    assert.match(tool.description,/Images are never attached automatically/);
+    await tool.execute('selected',{title:'Visual check',objective:'Check alignment',agentId:'agent',message:'Use this screenshot',imageIds:['chosen']},undefined,undefined,{} as any);
+    assert.deepEqual(sent.at(-1).imageIds,['chosen']);
+  }
+});

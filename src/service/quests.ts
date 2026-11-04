@@ -20,7 +20,7 @@ import { text, directory, resolveProject, validateProject, selectedRepositories,
 import { discoverGuidance } from '../engine/guidance.ts';
 import { isolationRequests, prepareIsolatedWorkspaces, readGuidance } from './isolated-workspaces.ts';
 import { validateImages, imageMessage } from './images.ts';
-import type { ImageUpload } from '../domain/images.ts';
+import { MAX_IMAGES, type ImageUpload } from '../domain/images.ts';
 export { text, directory } from './projects.ts';
 
 import type { ConnectionManager } from '../connections/manager.ts';
@@ -385,9 +385,9 @@ export class QuestService extends EventEmitter {
       const title = text(input.title,'Title',160);
       const objective = text(input.objective,'Objective');
       // Normalize identical retries even when a model repeats a call with a new tool ID.
-      const commandId = 'followup:' + createHash('sha256').update(JSON.stringify([parentId,expectedRunId,user.id,title,objective,projectId,repositoryIds,input.workspacePolicy])).digest('hex');
+      const commandId = 'followup:' + createHash('sha256').update(JSON.stringify([parentId,expectedRunId,user.id,title,objective,projectId,repositoryIds,input.workspacePolicy,input.imageIds])).digest('hex');
       const created = await this.create({
-        title, objective, projectId, workspacePolicy:input.workspacePolicy as 'isolated'|'shared',
+        title, objective, projectId, imageIds:input.imageIds as string[] | undefined, workspacePolicy:input.workspacePolicy as 'isolated'|'shared',
         ...(projectId ? {repositories:repositoryIds?.map(repositoryId => ({repositoryId}))} : {workspaceMode:'none'}),
         tools:[...parent.tools], instructions:parent.instructions, commandId,
       }, 'quest', undefined, {role:'quest',questId:parentId,runId:expectedRunId,text:user.text});
@@ -397,13 +397,14 @@ export class QuestService extends EventEmitter {
       return created;
     });
   }
-  async createDelegate(parentId: string, input: { title?: unknown; objective: unknown; repositoryIds?: unknown; tools?: unknown; isolation?: unknown; modelPreference?: ModelPreference; commandId: string }, expectedRunId?: string) {
+  async createDelegate(parentId: string, input: { title?: unknown; objective: unknown; imageIds?: unknown; repositoryIds?: unknown; tools?: unknown; isolation?: unknown; modelPreference?: ModelPreference; commandId: string }, expectedRunId?: string) {
     if ('model' in input || 'reasoning' in input || 'execution' in input || 'teamModels' in input) throw new AppError('Use configured model preferences for delegates.',403);
     this.lead(parentId,expectedRunId);
     return this.setup(input.commandId, `delegate:${parentId}`, input, async () => {
-      const {parent,command,q,requests} = await this.serialize(() => {
+      const {parent,command,q,requests,images} = await this.serialize(() => {
         const parent = this.lead(parentId, expectedRunId);
         const command = this.checkCommand(input.commandId, `delegate:${parentId}`, input);
+        const images = this.handoffImages(input, parentId);
         if (this.agents(parentId).length + (this.pendingDelegates.get(parentId) ?? 0) >= MAX_SUBAGENTS) throw new AppError('This quest already has five delegates. Continue an existing delegate instead.', 409);
         if (!['running','awaiting_input','waiting'].includes(parent.status)) throw new AppError('Start or resume the quest lead before adding delegates.', 409);
         const objective = text(input.objective, 'Objective');
@@ -431,7 +432,7 @@ export class QuestService extends EventEmitter {
           sessionPath: join(this.dataDir, 'sessions', id, 'session.jsonl'), createdAt: Date.now(), updatedAt: Date.now(), runCount: 0,
         };
         this.pendingDelegates.set(parentId,(this.pendingDelegates.get(parentId) ?? 0)+1);
-        return {parent,command,q,requests};
+        return {parent,command,q,requests,images};
       });
       let prepared: Awaited<ReturnType<typeof prepareIsolatedWorkspaces>> | undefined;
       let saved = false;
@@ -457,7 +458,7 @@ export class QuestService extends EventEmitter {
           const source = currentParent.activeRunId ? this.delegationSource(currentParent) : undefined;
           this.checkAvailable(q);
           this.store.transaction(() => {
-            this.store.save(q); this.prepare(q, delegatedPrompt(q.objective, source), command.id, undefined, undefined, { source: 'quest_lead', displayText: q.objective });
+            this.store.save(q); this.prepare(q, delegatedPrompt(q.objective, source), command.id, undefined, undefined, { source: 'quest_lead', displayText: q.objective }, images);
             if (currentParent.status === 'waiting') { currentParent.waitForAgentIds = [...new Set([...(currentParent.waitForAgentIds ?? []), q.id])]; this.store.save(currentParent); }
             this.store.event(parentId, 'delegate_created', `Delegated to ${q.title}.`);
             if (requests) this.store.event(q.id,'workspace',`Isolated workspaces prepared at ${requests.map(r=>r.commit).join(', ')}. Output: ${q.outputPath}`);
@@ -517,7 +518,7 @@ export class QuestService extends EventEmitter {
       } finally { if (!saved) await prepared.cleanup(); }
     });
   }
-  async continueDelegate(parentId: string, id: string, input: { message?: unknown; freshContext?: unknown; isolation?: unknown; modelPreference?: ModelPreference; commandId: string }, expectedRunId?: string) {
+  async continueDelegate(parentId: string, id: string, input: { message?: unknown; imageIds?: unknown; freshContext?: unknown; isolation?: unknown; modelPreference?: ModelPreference; commandId: string }, expectedRunId?: string) {
     this.lead(parentId,expectedRunId);
     if (this.get(id).parentQuestId !== parentId) throw new AppError('This delegate belongs to another quest.',403);
     return this.setup(input.commandId,`continue:${id}`,input,async()=>{
@@ -723,7 +724,7 @@ export class QuestService extends EventEmitter {
     });
   }
   async create(input: CreateQuest, kind: Quest['kind'] = 'quest', originalInput?: Record<string, any>, sourceRequest?: DelegationSource, dispatch?: ScheduledDispatch, guard?:()=>void) {
-    const images = validateImages(input.images);
+    const images = this.handoffImages(input, sourceRequest?.questId);
     if (input.workspacePolicy !== undefined && !['shared','isolated'].includes(input.workspacePolicy)) throw new AppError('Unknown workspace policy.');
     if (kind === 'quest' && input.workspacePolicy === 'isolated') return this.createIsolated(input,originalInput,sourceRequest,images,dispatch,guard);
     if (input.revisions !== undefined) throw new AppError('Pinned revisions require isolated workspaces.');
@@ -770,18 +771,19 @@ export class QuestService extends EventEmitter {
       }
     });
   }
-  private runImages(runId?: string): ImageUpload[] {
-    if (!runId) return [];
-    const run = this.store.getRun(runId);
-    const messages = run ? this.store.messages(run.questId) : [];
-    const index = messages.findIndex(message => message.id === run?.data.messageId);
-    // Later requests can refer back to the most recent reference images.
-    // Generated assistant outputs stay durable references; never copy their bytes
-    // into instruction deliveries or native session snapshots on follow-up.
-    const message = messages.slice(0,index + 1).findLast(message => message.role === 'user' && !!message.attachments?.length);
-    return (message?.attachments ?? []).map(attachment => {
-      const image = this.store.image(run!.questId, attachment.id);
-      if (!image) throw new AppError('A saved reference image is missing. Attach it again before continuing.',409);
+  private handoffImages(input: {images?: unknown; imageIds?: unknown}, sourceId?: string): ImageUpload[] {
+    if (!sourceId) {
+      if (input.imageIds !== undefined) throw new AppError('Image references require an originating conversation.');
+      return validateImages(input.images);
+    }
+    if (input.images !== undefined) throw new AppError('Select conversation imageIds instead of uploading image bytes for a handoff.');
+    const ids = input.imageIds === undefined ? [] : input.imageIds;
+    if (!Array.isArray(ids) || ids.length > MAX_IMAGES || ids.some(id => typeof id !== 'string') || new Set(ids).size !== ids.length) throw new AppError('Select up to four distinct conversation image IDs.');
+    const available = new Set(this.store.messages(sourceId).flatMap(message => (message.attachments ?? []).map(image => image.id)));
+    return ids.map(id => {
+      if (!available.has(id)) throw new AppError('The selected image is not available in the originating conversation.',403);
+      const image = this.store.image(sourceId, id);
+      if (!image) throw new AppError('A selected image is missing. Select another image or ask the user to attach it again.',409);
       return { name: image.name, mimeType: image.mimeType, data: Buffer.from(image.data).toString('base64') };
     });
   }
@@ -790,9 +792,7 @@ export class QuestService extends EventEmitter {
     const execution=this.modelDefaults.validate(q.execution ?? {model:q.model,reasoning:null});
     q.execution=execution;
     delete q.reopenedAt;
-    const inheritedRun = presentation?.source === 'quest_lead' ? (q.parentQuestId ? this.get(q.parentQuestId).activeRunId : q.sourceRequest?.runId)
-      : presentation?.source === 'guildmaster' ? q.sourceRequest?.runId : undefined;
-    const inputImages=images ?? this.runImages(inheritedRun);
+    const inputImages=images ?? [];
     this.checkModelImages(q,execution,inputImages);
     const attachments = this.store.saveImages(q.id, inputImages);
     if (q.kind !== 'guildmaster' && !q.guidanceRevision) {
@@ -1000,8 +1000,8 @@ export class QuestService extends EventEmitter {
     this.store.save(q); this.store.event(id, q.status, error);
     this.store.run(runId, id, { status: q.status, error, endedAt: Date.now() }); this.changed(id);
   }
-  async continue(id: string, input: { message?: unknown; images?: unknown; freshContext?: unknown; isolation?: unknown; commandId: string }, resume = false, source?: DelegationSource, delegated?: { parentId: string; expectedRunId?: string; replacement?: {workspaces:QuestWorkspace[];guidanceRevision:string;outputPath:string;isolation:import('../domain/types.ts').IsolationRequest[];guard:()=>void} }) {
-    const images = validateImages(input.images);
+  async continue(id: string, input: { message?: unknown; images?: unknown; imageIds?: unknown; freshContext?: unknown; isolation?: unknown; commandId: string }, resume = false, source?: DelegationSource, delegated?: { parentId: string; expectedRunId?: string; replacement?: {workspaces:QuestWorkspace[];guidanceRevision:string;outputPath:string;isolation:import('../domain/types.ts').IsolationRequest[];guard:()=>void} }) {
+    const images = this.handoffImages(input, source?.questId ?? delegated?.parentId);
     return this.serialize(async () => {
       if (delegated) { this.lead(delegated.parentId, delegated.expectedRunId); if (this.get(id).parentQuestId !== delegated.parentId) throw new AppError('This delegate belongs to another quest.',403); }
       const command = this.checkCommand(input.commandId, `${resume ? 'resume' : 'continue'}:${id}`, source ? {input,source} : input);
@@ -1043,7 +1043,7 @@ export class QuestService extends EventEmitter {
       const sourcePrompt = resume ? previousRun?.data.sourcePrompt ?? previousRun?.data.prompt ?? legacyInstruction ?? q.objective : source?.text ?? message;
       this.store.transaction(() => {
         if (input.freshContext) this.store.event(id, 'assignment', 'Started an independent assignment. Earlier conversation files are retained.');
-        this.prepare(q, message, command.id, undefined, sourcePrompt, resume ? { source: 'system' } : source ? { source: 'guildmaster', displayText: text(input.message, 'Feedback') } : delegated ? { source: 'quest_lead', displayText: text(input.message, 'Feedback') } : undefined, images.length ? images : source ? this.runImages(source.runId) : undefined);
+        this.prepare(q, message, command.id, undefined, sourcePrompt, resume ? { source: 'system' } : source ? { source: 'guildmaster', displayText: text(input.message, 'Feedback') } : delegated ? { source: 'quest_lead', displayText: text(input.message, 'Feedback') } : undefined, images);
         if (parent && !['running','awaiting_input','queued'].includes(parent.status)) {
           parent.status = 'waiting'; parent.waitForAgentIds = [...new Set([...(parent.waitForAgentIds ?? []), id])]; this.store.save(parent);
         }

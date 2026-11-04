@@ -133,7 +133,11 @@ export function createApp(options: { dataDir: string; port?: number; workerPath?
         // or the delegate itself (never its lead). References cannot cross this boundary.
         if (req.method === 'GET' && path === '/api/agent/images') {
           const jobs = images.list(quest.id);
-          json(res,200,{ outputs: jobs.flatMap(job => job.outputs), jobs: jobs.map(({commandId,status,error,createdAt,endedAt,count,quality,size}) => ({commandId,status,error,createdAt,endedAt,count,quality,size})), settings: (() => { const {defaultQuality,defaultSize} = images.settingsView(); return {defaultQuality,defaultSize}; })(), attachments: store.messages(quest.id).flatMap(message => message.attachments ?? []) }); return;
+          const attachments = store.messages(quest.id).flatMap(message => (message.attachments ?? []).map(image => ({
+            ...image, messageId:message.id, role:message.role, source:message.source ?? message.role,
+            createdAt:message.createdAt, messageExcerpt:(message.displayText ?? message.text).slice(0,2000),
+          })));
+          json(res,200,{ outputs: jobs.flatMap(job => job.outputs), jobs: jobs.map(({commandId,status,error,createdAt,endedAt,count,quality,size}) => ({commandId,status,error,createdAt,endedAt,count,quality,size})), settings: (() => { const {defaultQuality,defaultSize} = images.settingsView(); return {defaultQuality,defaultSize}; })(), attachments }); return;
         }
         if (req.method !== 'POST' || path !== '/api/agent/images/generate') throw new AppError('Method not allowed.',405);
         const input = await body(req);
